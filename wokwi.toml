@@ -5,5 +5,5 @@ firmware = ".pio/build/nodemcuv2/firmware.bin"
 
 # If you want to access your nodemcuv2's web server
 [[net.forward]]
-from = "localhost:8100"
+from = "localhost:8081"
 to = "target:80"
