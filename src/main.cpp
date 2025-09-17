@@ -6,25 +6,95 @@
 #include <WebSocketsClient.h>
 
 #ifndef LOOP_DELAY_MS
-#define LOOP_DELAY_MS 15 // Ajuste via build_flags: -DLOOP_DELAY_MS=10
+#define LOOP_DELAY_MS 200 // Ajuste via build_flags: -DLOOP_DELAY_MS=10
+#endif
+
+#ifndef HEARTBEAT_MS
+#define HEARTBEAT_MS 10000 // 10s: ajuste com -DHEARTBEAT_MS=5000 p/ testes
 #endif
 
 static const char *ssid = "restic36uesb";
 static const char *password = "@cpdsrestic36";
 static const char *WS_HOST = "192.168.1.31";
 static const uint16_t WS_PORT = 8081;
-static const char *CAR_ID = "CAR-1757510252190-ebejktj15";
+static const char *CAR_ID = "CAR-1758112436133-q5wqs3t1v"; // único por carro, pode ser qualquer string, esse valor só vai ser gerado no site cada placa tem uma.
 static const char *HOSTNAME = "esp8266car"; // acessível como esp8266car.local via mDNS
 
 WebSocketsClient webSocket;
+static unsigned long lastHeartbeatAt = 0;
+static String g_lastStatus = "STOPPED";
 
 namespace App
 {
   void publishStatus(const char *status)
   {
-    String json = String("{\"status\":\"") + status + "\"}";
+    g_lastStatus = status;
+    String json;
+    json.reserve(128);
+    json += "{\"type\":\"status\",";
+    json += "\"carId\":\"";
+    json += CAR_ID;
+    json += "\",";
+    json += "\"status\":\"";
+    json += status;
+    json += "\",";
+    json += "\"relayOn\":";
+    json += (Relay::isOn() ? "true" : "false");
+    json += "}";
     webSocket.sendTXT(json);
     Disp::showStatus(status);
+  }
+
+  void sendHello()
+  {
+    String json;
+    json.reserve(256);
+    json += "{\"type\":\"hello\",";
+    json += "\"carId\":\"";
+    json += CAR_ID;
+    json += "\",";
+    json += "\"ip\":\"";
+    json += Net::ip();
+    json += "\",";
+    json += "\"hostname\":\"";
+    json += (Net::hostname() ? Net::hostname() : HOSTNAME);
+    json += "\",";
+    json += "\"mdns\":\"";
+    json += (Net::hostname() ? String(Net::hostname()) + ".local" : String(HOSTNAME) + ".local");
+    json += "\",";
+    json += "\"board\":\"ESP8266\"";
+    json += "}";
+    webSocket.sendTXT(json);
+  }
+
+  void sendHeartbeat()
+  {
+    unsigned long now = millis();
+    if (now - lastHeartbeatAt < HEARTBEAT_MS)
+      return;
+    lastHeartbeatAt = now;
+    String json;
+    json.reserve(256);
+    json += "{\"type\":\"heartbeat\",";
+    json += "\"carId\":\"";
+    json += CAR_ID;
+    json += "\",";
+    json += "\"status\":\"";
+    json += g_lastStatus;
+    json += "\",";
+    json += "\"relayOn\":";
+    json += (Relay::isOn() ? "true" : "false");
+    json += ",";
+    json += "\"rssi\":";
+    json += Net::rssi();
+    json += ",";
+    json += "\"ip\":\"";
+    json += Net::ip();
+    json += "\",";
+    json += "\"uptimeSec\":";
+    json += (now / 1000);
+    json += "}";
+    webSocket.sendTXT(json);
   }
 
   void handleAction(const String &action)
@@ -52,6 +122,7 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
   switch (type)
   {
   case WStype_CONNECTED:
+    App::sendHello();
     App::publishStatus("STOPPED");
     break;
   case WStype_TEXT:
@@ -103,6 +174,7 @@ void loop()
 {
   Net::loop();
   webSocket.loop();
+  App::sendHeartbeat();
   Disp::loop();
   // Pequeno descanso para não saturar a simulação/terminal do Wokwi
   delay(LOOP_DELAY_MS); // 10-20ms é seguro; use 5-10ms para testes de performance do WS
