@@ -10,4 +10,7 @@ namespace Net
     void ensure();
     void setupTime();
     bool setupMDNS(const char *hostname);
+    long rssi();
+    String ip();
+    const char *hostname();
 }

@@ -1,4 +1,4 @@
-#include "wifi.h"
+    #include "wifi.h"
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -104,5 +104,28 @@ namespace Net
         {
             setupMDNS(g_hostname);
         }
+    }
+
+    long rssi()
+    {
+        if (!isConnected())
+            return 0;
+        return WiFi.RSSI();
+    }
+
+    String ip()
+    {
+        if (!isConnected())
+            return String("");
+#if defined(ESP8266)
+        return WiFi.localIP().toString();
+#else
+        return WiFi.localIP().toString();
+#endif
+    }
+
+    const char *hostname()
+    {
+        return g_hostname;
     }
 }
