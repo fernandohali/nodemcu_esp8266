@@ -1,11 +1,9 @@
-    #include "wifi.h"
+#include "wifi.h"
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
-#include <ESP8266mDNS.h>
 #elif defined(ESP32)
 #include <WiFi.h>
-#include <ESPmDNS.h>
 #endif
 
 namespace Net
@@ -14,13 +12,36 @@ namespace Net
     static const char *g_pass = nullptr;
     static const char *g_hostname = nullptr;
     static unsigned long lastCheck = 0;
-    static bool mdnsStarted = false;
+    static bool mdnsStarted = false; // mDNS desabilitado
+    static bool autoReconnect = true;
+
+    void printStatus()
+    {
+#if defined(ESP8266)
+        wl_status_t st = WiFi.status();
+        Serial.print(F("WiFi status: "));
+        Serial.print(st);
+        Serial.print(F(" RSSI:"));
+        Serial.print(WiFi.RSSI());
+        Serial.print(F(" IP:"));
+        Serial.println(WiFi.localIP());
+#else
+        Serial.print(F("WiFi status: "));
+        Serial.print((int)WiFi.status());
+        Serial.print(F(" RSSI:"));
+        Serial.print(WiFi.RSSI());
+        Serial.print(F(" IP:"));
+        Serial.println(WiFi.localIP());
+#endif
+    }
 
     void begin(const char *ssid, const char *pass)
     {
         g_ssid = ssid;
         g_pass = pass;
         WiFi.mode(WIFI_STA);
+        WiFi.setAutoConnect(true);
+        WiFi.setAutoReconnect(true);
         WiFi.begin(g_ssid, g_pass);
     }
 
@@ -37,6 +58,8 @@ namespace Net
         if (g_hostname && *g_hostname)
             WiFi.setHostname(g_hostname);
 #endif
+        WiFi.setAutoConnect(true);
+        WiFi.setAutoReconnect(true);
         WiFi.begin(g_ssid, g_pass);
     }
 
@@ -53,8 +76,16 @@ namespace Net
         if (now - lastCheck < 2000)
             return; // evita spam
         lastCheck = now;
-        WiFi.disconnect();
-        WiFi.begin(g_ssid, g_pass);
+        Serial.println(F("WiFi not connected, attempting reconnect..."));
+#if defined(ESP8266)
+        // Mostrar diagnóstico da pilha WiFi
+        WiFi.printDiag(Serial);
+#endif
+        if (autoReconnect)
+        {
+            WiFi.disconnect();
+            WiFi.begin(g_ssid, g_pass);
+        }
     }
 
     void setupTime()
@@ -64,46 +95,30 @@ namespace Net
 
     bool setupMDNS(const char *hostname)
     {
-#if defined(ESP8266)
-        if (!isConnected())
-            return false;
-        if (mdnsStarted)
-            return true;
-        if (!MDNS.begin(hostname && *hostname ? hostname : (g_hostname ? g_hostname : "esp8266")))
-        {
-            return false;
-        }
-        mdnsStarted = true;
-        return true;
-#elif defined(ESP32)
-        if (!isConnected())
-            return false;
-        if (mdnsStarted)
-            return true;
-        if (!MDNS.begin(hostname && *hostname ? hostname : (g_hostname ? g_hostname : "esp32")))
-        {
-            return false;
-        }
-        mdnsStarted = true;
-        return true;
-#else
+        // mDNS intencionalmente não utilizado
         return false;
-#endif
     }
 
     void loop()
     {
         ensure();
-        // Atualiza serviço mDNS, se iniciado
-#if defined(ESP8266)
-        if (mdnsStarted)
-            MDNS.update();
-#endif
-        // Tenta iniciar mDNS quando conectar
-        if (!mdnsStarted && isConnected() && (g_hostname && *g_hostname))
+        // mDNS desabilitado: nada a fazer aqui
+    }
+
+    bool waitConnected(unsigned long timeoutMs)
+    {
+        unsigned long start = millis();
+        while (millis() - start < timeoutMs)
         {
-            setupMDNS(g_hostname);
+            if (isConnected())
+            {
+                printStatus();
+                return true;
+            }
+            delay(100);
         }
+        printStatus();
+        return false;
     }
 
     long rssi()

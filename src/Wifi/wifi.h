@@ -13,4 +13,5 @@ namespace Net
     long rssi();
     String ip();
     const char *hostname();
+    bool waitConnected(unsigned long timeoutMs);
 }
