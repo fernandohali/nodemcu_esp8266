@@ -13,16 +13,18 @@
 #define HEARTBEAT_MS 10000 // 10s: ajuste com -DHEARTBEAT_MS=5000 p/ testes
 #endif
 
-static const char *ssid = "restic36uesb";
-static const char *password = "@cpdsrestic36";
-static const char *WS_HOST = "192.168.1.31";
+static const char *ssid = "";
+static const char *password = "@";
+#ifndef WS_HOST_STR
+#define WS_HOST_STR "" // Ajuste via build_flags: -DWS_HOST_STR=\"192.168.1.130\"
+#endif
 static const uint16_t WS_PORT = 8081;
-static const char *CAR_ID = "CAR-1758112436133-q5wqs3t1v"; // único por carro, pode ser qualquer string, esse valor só vai ser gerado no site cada placa tem uma.
-static const char *HOSTNAME = "esp8266car"; // acessível como esp8266car.local via mDNS
+static const char *CAR_ID = ""; // único por carro, pode ser qualquer string, esse valor só vai ser gerado no site cada placa tem uma.
 
 WebSocketsClient webSocket;
 static unsigned long lastHeartbeatAt = 0;
 static String g_lastStatus = "STOPPED";
+static unsigned long lastInboundAt = 0; // último evento recebido do servidor
 
 namespace App
 {
@@ -57,14 +59,37 @@ namespace App
     json += Net::ip();
     json += "\",";
     json += "\"hostname\":\"";
-    json += (Net::hostname() ? Net::hostname() : HOSTNAME);
-    json += "\",";
-    json += "\"mdns\":\"";
-    json += (Net::hostname() ? String(Net::hostname()) + ".local" : String(HOSTNAME) + ".local");
+    json += (Net::hostname() ? Net::hostname() : "");
     json += "\",";
     json += "\"board\":\"ESP8266\"";
     json += "}";
     webSocket.sendTXT(json);
+    // Log único para identificar IP da placa no Serial Monitor
+    Serial.print(F("Device IP: "));
+    Serial.println(Net::ip());
+  }
+
+  void printConnectionSnapshot()
+  {
+    String snap;
+    snap.reserve(96);
+    snap += "{\"carId\":\"";
+    snap += CAR_ID;
+    snap += "\",";
+    snap += "\"online\":";
+    snap += (webSocket.isConnected() ? "true" : "false");
+    snap += ",";
+    snap += "\"lastSeenSec\":";
+    if (webSocket.isConnected() && lastInboundAt > 0)
+    {
+      snap += ((millis() - lastInboundAt) / 1000);
+    }
+    else
+    {
+      snap += "null";
+    }
+    snap += "}";
+    Serial.println(snap);
   }
 
   void sendHeartbeat()
@@ -95,6 +120,8 @@ namespace App
     json += (now / 1000);
     json += "}";
     webSocket.sendTXT(json);
+    // Também imprime o snapshot para o Serial, como solicitado
+    printConnectionSnapshot();
   }
 
   void handleAction(const String &action)
@@ -122,11 +149,17 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
   switch (type)
   {
   case WStype_CONNECTED:
+    lastInboundAt = millis();
     App::sendHello();
     App::publishStatus("STOPPED");
+    App::printConnectionSnapshot();
+    break;
+  case WStype_DISCONNECTED:
+    App::printConnectionSnapshot();
     break;
   case WStype_TEXT:
   {
+    lastInboundAt = millis();
     String msg;
     msg.reserve(length);
     for (size_t i = 0; i < length; i++)
@@ -158,12 +191,17 @@ void setup()
 #endif
   Relay::begin();
   Disp::begin();
-  Net::begin(ssid, password, HOSTNAME);
+  Net::begin(ssid, password);
+  Serial.println(F("Conectando ao WiFi..."));
+  if (!Net::waitConnected(15000))
+  { // espera até 15s
+    Serial.println(F("Falha ao conectar no WiFi dentro do timeout."));
+  }
   Net::setupTime();
-  Net::setupMDNS(HOSTNAME);
+  // mDNS desabilitado por preferência: usaremos apenas IP
 
   String path = String("/ws?carId=") + CAR_ID;
-  webSocket.begin(WS_HOST, WS_PORT, path.c_str());
+  webSocket.begin(WS_HOST_STR, WS_PORT, path.c_str());
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(2000);
   webSocket.enableHeartbeat(15000, 3000, 2);
