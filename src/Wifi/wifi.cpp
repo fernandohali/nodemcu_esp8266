@@ -14,6 +14,23 @@ namespace Net
     static unsigned long lastCheck = 0;
     static bool mdnsStarted = false; // mDNS desabilitado
     static bool autoReconnect = true;
+    static bool staticConfigured = false;
+    static IPAddress staticIp, staticGw, staticMask, staticDns1, staticDns2;
+
+    void configureStaticIp(const char *ip, const char *gateway, const char *mask, const char *dns1, const char *dns2)
+    {
+        if (ip && gateway && mask)
+        {
+            staticIp.fromString(ip);
+            staticGw.fromString(gateway);
+            staticMask.fromString(mask);
+            if (dns1 && *dns1)
+                staticDns1.fromString(dns1);
+            if (dns2 && *dns2)
+                staticDns2.fromString(dns2);
+            staticConfigured = true;
+        }
+    }
 
     void printStatus()
     {
@@ -40,8 +57,22 @@ namespace Net
         g_ssid = ssid;
         g_pass = pass;
         WiFi.mode(WIFI_STA);
+#if defined(ESP8266)
+        WiFi.setSleepMode(WIFI_NONE_SLEEP); // desabilita power-save que pode causar latência e quedas
+#endif
         WiFi.setAutoConnect(true);
         WiFi.setAutoReconnect(true);
+        if (staticConfigured)
+        {
+            if (staticDns1)
+            {
+                WiFi.config(staticIp, staticGw, staticMask, staticDns1, staticDns2);
+            }
+            else
+            {
+                WiFi.config(staticIp, staticGw, staticMask);
+            }
+        }
         WiFi.begin(g_ssid, g_pass);
     }
 
@@ -52,6 +83,9 @@ namespace Net
         g_pass = pass;
         WiFi.mode(WIFI_STA);
 #if defined(ESP8266)
+        WiFi.setSleepMode(WIFI_NONE_SLEEP);
+#endif
+#if defined(ESP8266)
         if (g_hostname && *g_hostname)
             WiFi.hostname(g_hostname);
 #elif defined(ESP32)
@@ -60,6 +94,17 @@ namespace Net
 #endif
         WiFi.setAutoConnect(true);
         WiFi.setAutoReconnect(true);
+        if (staticConfigured)
+        {
+            if (staticDns1)
+            {
+                WiFi.config(staticIp, staticGw, staticMask, staticDns1, staticDns2);
+            }
+            else
+            {
+                WiFi.config(staticIp, staticGw, staticMask);
+            }
+        }
         WiFi.begin(g_ssid, g_pass);
     }
 
@@ -84,6 +129,17 @@ namespace Net
         if (autoReconnect)
         {
             WiFi.disconnect();
+            if (staticConfigured)
+            {
+                if (staticDns1)
+                {
+                    WiFi.config(staticIp, staticGw, staticMask, staticDns1, staticDns2);
+                }
+                else
+                {
+                    WiFi.config(staticIp, staticGw, staticMask);
+                }
+            }
             WiFi.begin(g_ssid, g_pass);
         }
     }
