@@ -148,7 +148,7 @@ namespace Net
     {
         Serial.println(F("[NTP] Configurando sincronização de tempo..."));
         configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
-        
+
         Serial.print(F("[NTP] Aguardando sincronização"));
         time_t now = time(nullptr);
         int attempts = 0;
@@ -159,13 +159,13 @@ namespace Net
             now = time(nullptr);
             attempts++;
         }
-        
+
         if (now >= 8 * 3600 * 2)
         {
             Serial.println(F("\n[NTP] Sincronização concluída!"));
             Serial.print(F("[NTP] Timestamp atual: "));
             Serial.println(now);
-            
+
             struct tm timeinfo;
             localtime_r(&now, &timeinfo);
             Serial.print(F("[NTP] Hora local: "));
