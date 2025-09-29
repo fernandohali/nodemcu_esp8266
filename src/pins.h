@@ -5,7 +5,7 @@
 // Mapeamento de pinos unificado (GPIO lógico)
 #if defined(ESP8266)
 // Relay original
-constexpr uint8_t RELAY_PIN = 2; // D4
+constexpr uint8_t RELAY_PIN = 15; // D8
 
 // Display TM1637
 constexpr uint8_t TM1637_DIO = 0; // D3
