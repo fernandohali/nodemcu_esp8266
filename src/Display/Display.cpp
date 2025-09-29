@@ -105,6 +105,12 @@ namespace Disp
         statusShownAt = millis();
     }
 
+    void showText(const char *text)
+    {
+        showText4(String(text));
+        showingStatus = false; // Força exibição do texto personalizado
+    }
+
     void loop()
     {
         unsigned long ms = millis();
