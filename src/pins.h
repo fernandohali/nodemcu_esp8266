@@ -7,9 +7,9 @@
 // Relay original
 constexpr uint8_t RELAY_PIN = 15; // D8
 
-// Display TM1637
-constexpr uint8_t TM1637_DIO = 0; // D3
-constexpr uint8_t TM1637_CLK = 4; // D2
+// Display TM1637 
+constexpr uint8_t TM1637_DIO = 12; // D6 
+constexpr uint8_t TM1637_CLK = 14; // D5
 
 // Módulo 74HC595 (Shift Register)
 constexpr uint8_t HC595_DATA_PIN = 4;  // D2 - QH/SER/DS (Dados)

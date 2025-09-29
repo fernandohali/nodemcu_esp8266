@@ -75,19 +75,51 @@ namespace Disp
     {
         time_t now = time(nullptr);
         if (now < 1000)
-            return; // não sincronizado
+        {
+            // Tempo ainda não sincronizado, mostrar "----"
+            showText4("----");
+            return;
+        }
+        
         struct tm info;
         localtime_r(&now, &info);
         int hh = info.tm_hour;
         int mm = info.tm_min;
         int value = hh * 100 + mm;
+        
+        // Debug no serial
+        static unsigned long lastDebug = 0;
+        if (millis() - lastDebug > 10000) // a cada 10 segundos
+        {
+            lastDebug = millis();
+            Serial.print(F("[DISPLAY] Tempo: "));
+            Serial.print(hh);
+            Serial.print(":");
+            Serial.print(mm);
+            Serial.print(F(" (timestamp="));
+            Serial.print(now);
+            Serial.println(")");
+        }
+        
         display.showNumberDecEx(value, 0b01000000, true);
     }
 
     void begin()
     {
+        Serial.print(F("[DISPLAY] Inicializando TM1637 - DIO:"));
+        Serial.print(TM1637_DIO);
+        Serial.print(F(" CLK:"));
+        Serial.println(TM1637_CLK);
+        
         display.setBrightness(0x0f);
         display.clear();
+        
+        // Teste inicial do display
+        showText4("TEST");
+        delay(1000);
+        display.clear();
+        
+        Serial.println(F("[DISPLAY] Inicializado com sucesso"));
     }
 
     void showStatus(const char *status)

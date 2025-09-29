@@ -24,7 +24,7 @@ function main() {
   console.log(`\n📝 Cole esta linha no platformio.ini em build_flags`);
   console.log(`\n📋 Exemplo completo:`);
   console.log(`build_flags =`);
-  console.log(`\t-DWS_HOST_STR="192.168.0.100"`);
+  console.log(`\t-DWS_HOST_STR="192.168.0.114"`);
   console.log(`\t-DCAR_ID_STR="${carId}"`);
   console.log();
 }

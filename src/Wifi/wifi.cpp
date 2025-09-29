@@ -146,7 +146,39 @@ namespace Net
 
     void setupTime()
     {
+        Serial.println(F("[NTP] Configurando sincronização de tempo..."));
         configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+        
+        Serial.print(F("[NTP] Aguardando sincronização"));
+        time_t now = time(nullptr);
+        int attempts = 0;
+        while (now < 8 * 3600 * 2 && attempts < 15) // Aguarda até ter um timestamp válido
+        {
+            delay(500);
+            Serial.print(".");
+            now = time(nullptr);
+            attempts++;
+        }
+        
+        if (now >= 8 * 3600 * 2)
+        {
+            Serial.println(F("\n[NTP] Sincronização concluída!"));
+            Serial.print(F("[NTP] Timestamp atual: "));
+            Serial.println(now);
+            
+            struct tm timeinfo;
+            localtime_r(&now, &timeinfo);
+            Serial.print(F("[NTP] Hora local: "));
+            Serial.print(timeinfo.tm_hour);
+            Serial.print(":");
+            Serial.print(timeinfo.tm_min);
+            Serial.print(":");
+            Serial.println(timeinfo.tm_sec);
+        }
+        else
+        {
+            Serial.println(F("\n[NTP] ERRO: Falha na sincronização!"));
+        }
     }
 
     bool setupMDNS(const char *hostname)
