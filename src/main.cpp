@@ -75,6 +75,26 @@ static const char *password = "35250509"; // TODO: idem acima
 static const uint16_t WS_PORT = 8081;
 static const char *CAR_ID = CAR_ID_STR; // usar macro configurável
 
+// ===== ESTADOS DA OPERAÇÃO =====
+enum OperationStatus
+{
+  OP_STOPPED = 0,    // Parado - relay desligado
+  OP_ACTIVE,         // Ativo - contando regressivamente
+  OP_PAUSED,         // Pausado - relay ligado, contador congelado
+  OP_LIBERATED_TIME, // Liberado com tempo - conta normalmente
+  OP_LIBERATED_FREE  // Liberado sem tempo - relay ligado, sem contador
+};
+
+// ===== VARIÁVEIS DE CONTROLE DE OPERAÇÃO =====
+static OperationStatus g_operationStatus = OP_STOPPED;
+static String g_sessionCarId = "";          // carId da sessão atual
+static int g_initialMinutes = 0;            // minutos iniciais recebidos
+static int g_remainingSeconds = 0;          // segundos restantes (contagem regressiva)
+static int g_extraSeconds = 0;              // segundos extras (contagem progressiva após 0:00)
+static bool g_isCountingDown = true;        // true = regressiva, false = progressiva
+static unsigned long g_lastCountUpdate = 0; // último update do contador
+static bool g_relayState = false;           // estado atual do relay
+
 WebSocketsClient webSocket;
 static unsigned long lastHeartbeatAt = 0;
 static String g_lastStatus = "STOPPED";
@@ -207,6 +227,18 @@ void showSystemInfo()
 
 namespace App
 {
+  // ===== DECLARAÇÕES DE FUNÇÕES =====
+  void startOperation(int minutes);
+  void stopOperation();
+  void pauseOperation();
+  void resumeOperation();
+  void liberateWithoutTime();
+  void updateDisplay();
+  void updateTimeCounter();
+  void handleOperationMessage(const String &message);
+  void handleSessionData(const String &message);
+  const char *getStatusString(OperationStatus status);
+
   void publishStatus(const char *status)
   {
     g_lastStatus = status;
@@ -415,22 +447,39 @@ namespace App
 
   void handleAction(const String &action)
   {
+    // Comandos simples (compatibilidade)
     if (action == "start")
     {
-      Relay::start();
-      publishStatus("RUNNING");
+      g_operationStatus = OP_ACTIVE;
+      startOperation(2); // 2 minutos padrão
+      publishStatus("ACTIVE");
     }
     else if (action == "stop")
     {
-      Relay::stop();
+      stopOperation();
       publishStatus("STOPPED");
+    }
+    else if (action == "pause")
+    {
+      pauseOperation();
+      publishStatus("PAUSED");
+    }
+    else if (action == "resume")
+    {
+      resumeOperation();
+      publishStatus("ACTIVE");
+    }
+    else if (action == "liberate_free")
+    {
+      liberateWithoutTime();
+      publishStatus("LIBERATED_FREE");
     }
     else if (action == "emergency")
     {
-      Relay::maintenance();
-      publishStatus("MAINTENANCE");
+      stopOperation();
+      publishStatus("EMERGENCY");
     }
-    // Comandos para controle do HC595
+    // Comandos para controle do HC595 (mantidos)
     else if (action.startsWith("hc595_pin_"))
     {
       // Formato: hc595_pin_3_on ou hc595_pin_5_off
@@ -469,6 +518,566 @@ namespace App
       HC595::update();
       Serial.print(F("[HC595] Byte definido: 0b"));
       Serial.println(value, BIN);
+    }
+  }
+
+  // ===== FUNÇÕES DE CONTROLE DE OPERAÇÃO (movidas para dentro do namespace) =====
+
+  // Converte OperationStatus para string para debug/display
+  const char *getStatusString(OperationStatus status)
+  {
+    switch (status)
+    {
+    case OP_STOPPED:
+      return "STOPPED";
+    case OP_ACTIVE:
+      return "ACTIVE";
+    case OP_PAUSED:
+      return "PAUSED";
+    case OP_LIBERATED_TIME:
+      return "LIBERATED_TIME";
+    case OP_LIBERATED_FREE:
+      return "LIBERATED_FREE";
+    default:
+      return "UNKNOWN";
+    }
+  }
+
+  // Atualiza o contador de tempo (chamado no loop)
+  void updateTimeCounter()
+  {
+    unsigned long now = millis();
+
+    // Atualiza a cada 1 segundo
+    if (now - g_lastCountUpdate >= 1000)
+    {
+      g_lastCountUpdate = now;
+
+      // Só conta se estiver em modo ativo ou liberado com tempo
+      if (g_operationStatus == OP_ACTIVE || g_operationStatus == OP_LIBERATED_TIME)
+      {
+
+        if (g_isCountingDown)
+        {
+          // Contagem regressiva
+          if (g_remainingSeconds > 0)
+          {
+            g_remainingSeconds--;
+          }
+          else
+          {
+            // Chegou em 0:00, muda para contagem progressiva
+            g_isCountingDown = false;
+            g_extraSeconds = 0;
+            Serial.println(F("[TIMER] Tempo esgotado! Iniciando contagem progressiva..."));
+          }
+        }
+        else
+        {
+          // Contagem progressiva (tempo extra)
+          g_extraSeconds++;
+        }
+
+        // Atualiza display
+        updateDisplay();
+      }
+    }
+  }
+
+  // Atualiza o display com o tempo atual
+  void updateDisplay()
+  {
+    if (g_operationStatus == OP_STOPPED)
+    {
+      Disp::showText("--:--");
+      return;
+    }
+
+    if (g_operationStatus == OP_LIBERATED_FREE)
+    {
+      Disp::showText("FREE");
+      return;
+    }
+
+    if (g_operationStatus == OP_PAUSED)
+    {
+      // Para pausado, pisca o tempo atual
+      static bool blinkState = false;
+      static unsigned long lastBlink = 0;
+
+      if (millis() - lastBlink >= 500)
+      { // Pisca a cada 500ms
+        lastBlink = millis();
+        blinkState = !blinkState;
+
+        if (blinkState)
+        {
+          int displayMinutes, displaySeconds;
+          if (g_isCountingDown)
+          {
+            displayMinutes = g_remainingSeconds / 60;
+            displaySeconds = g_remainingSeconds % 60;
+          }
+          else
+          {
+            displayMinutes = g_extraSeconds / 60;
+            displaySeconds = g_extraSeconds % 60;
+          }
+          char timeStr[8];
+          sprintf(timeStr, "%02d:%02d", displayMinutes, displaySeconds);
+          Serial.print(F("[DISPLAY] Pausado mostrando: "));
+          Serial.println(timeStr);
+          Disp::showText(timeStr);
+        }
+        else
+        {
+          Disp::showText("    "); // Espaços em branco para piscar
+        }
+      }
+      return;
+    }
+
+    // Para os outros estados (ACTIVE, LIBERATED_TIME), mostra o tempo
+    int displayMinutes, displaySeconds;
+
+    if (g_isCountingDown)
+    {
+      // Contagem regressiva: mostra tempo restante
+      displayMinutes = g_remainingSeconds / 60;
+      displaySeconds = g_remainingSeconds % 60;
+    }
+    else
+    {
+      // Contagem progressiva: mostra tempo extra
+      displayMinutes = g_extraSeconds / 60;
+      displaySeconds = g_extraSeconds % 60;
+    }
+
+    char timeStr[8];
+    sprintf(timeStr, "%02d:%02d", displayMinutes, displaySeconds);
+    Serial.print(F("[DISPLAY] Atualizando: "));
+    Serial.print(timeStr);
+    Serial.print(F(" (Regressiva: "));
+    Serial.print(g_isCountingDown ? "SIM" : "NAO");
+    Serial.print(F(", Status: "));
+    Serial.print(getStatusString(g_operationStatus));
+    Serial.println(F(")"));
+    Disp::showText(timeStr);
+  }
+
+  // Inicia uma operação com tempo
+  void startOperation(int minutes)
+  {
+    g_initialMinutes = minutes;
+    g_remainingSeconds = minutes * 60;
+    g_extraSeconds = 0;
+    g_isCountingDown = true;
+    g_lastCountUpdate = millis();
+
+    // Liga relay
+    if (!g_relayState)
+    {
+      Relay::start();
+      g_relayState = true;
+    }
+
+    Serial.print(F("[OPERATION] Iniciada com "));
+    Serial.print(minutes);
+    Serial.println(F(" minutos"));
+
+    updateDisplay();
+  }
+
+  // Para a operação
+  void stopOperation()
+  {
+    g_operationStatus = OP_STOPPED;
+    g_remainingSeconds = 0;
+    g_extraSeconds = 0;
+    g_lastCountUpdate = 0;
+
+    // Desliga relay
+    if (g_relayState)
+    {
+      Relay::stop();
+      g_relayState = false;
+    }
+
+    Serial.println(F("[OPERATION] Parada"));
+    updateDisplay();
+  }
+
+  // Pausa/resume a operação
+  void pauseOperation()
+  {
+    if (g_operationStatus == OP_ACTIVE || g_operationStatus == OP_LIBERATED_TIME)
+    {
+      g_operationStatus = OP_PAUSED;
+      Serial.println(F("[OPERATION] Pausada"));
+    }
+  }
+
+  void resumeOperation()
+  {
+    if (g_operationStatus == OP_PAUSED)
+    {
+      // Volta para o estado anterior (precisa melhorar esta lógica)
+      g_operationStatus = OP_ACTIVE; // Assumindo que era ACTIVE
+      g_lastCountUpdate = millis();  // Reset timer
+      Serial.println(F("[OPERATION] Resumida"));
+    }
+  }
+
+  // Libera sem tempo (FREE)
+  void liberateWithoutTime()
+  {
+    g_operationStatus = OP_LIBERATED_FREE;
+    g_remainingSeconds = 0;
+    g_extraSeconds = 0;
+
+    // Liga relay
+    if (!g_relayState)
+    {
+      Relay::start();
+      g_relayState = true;
+    }
+
+    Serial.println(F("[OPERATION] Liberada sem tempo"));
+    updateDisplay();
+  }
+
+  // Processa mensagens JSON com dados da operação
+  void handleOperationMessage(const String &message)
+  {
+    // Parse simples do JSON para extrair campos necessários
+    String carId = "";
+    String status = "";
+    int initialMinutes = 0;
+    int remainingSeconds = 0;
+
+    // Extrair carId
+    int carIndex = message.indexOf("\"carId\"");
+    if (carIndex >= 0)
+    {
+      int colon = message.indexOf(':', carIndex);
+      int q1 = message.indexOf('"', colon + 1);
+      int q2 = message.indexOf('"', q1 + 1);
+      if (q1 >= 0 && q2 > q1)
+      {
+        carId = message.substring(q1 + 1, q2);
+      }
+    }
+
+    // Extrair status
+    int statusIndex = message.indexOf("\"status\"");
+    if (statusIndex >= 0)
+    {
+      int colon = message.indexOf(':', statusIndex);
+      int q1 = message.indexOf('"', colon + 1);
+      int q2 = message.indexOf('"', q1 + 1);
+      if (q1 >= 0 && q2 > q1)
+      {
+        status = message.substring(q1 + 1, q2);
+      }
+    }
+
+    // Extrair initialMinutes
+    int minutesIndex = message.indexOf("\"initialMinutes\"");
+    if (minutesIndex >= 0)
+    {
+      int colon = message.indexOf(':', minutesIndex);
+      int comma = message.indexOf(',', colon);
+      int brace = message.indexOf('}', colon);
+      int end = (comma > 0 && comma < brace) ? comma : brace;
+      if (end > colon)
+      {
+        String minutesStr = message.substring(colon + 1, end);
+        minutesStr.trim();
+        initialMinutes = minutesStr.toInt();
+      }
+    }
+
+    // Extrair remainingTime.total_seconds
+    int remainingIndex = message.indexOf("\"total_seconds\"");
+    if (remainingIndex >= 0)
+    {
+      int colon = message.indexOf(':', remainingIndex);
+      int comma = message.indexOf(',', colon);
+      int brace = message.indexOf('}', colon);
+      int end = (comma > 0 && comma < brace) ? comma : brace;
+      if (end > colon)
+      {
+        String secondsStr = message.substring(colon + 1, end);
+        secondsStr.trim();
+        remainingSeconds = secondsStr.toInt();
+      }
+    }
+
+    // Validar carId (só processa se for o carro correto)
+    if (carId.length() > 0 && carId != CAR_ID)
+    {
+      Serial.print(F("[OPERATION] Mensagem ignorada - carId: "));
+      Serial.print(carId);
+      Serial.print(F(" (esperado: "));
+      Serial.print(CAR_ID);
+      Serial.println(F(")"));
+      return;
+    }
+
+    // Processar comandos baseados no status
+    Serial.print(F("[OPERATION] Recebido - Status: "));
+    Serial.print(status);
+    Serial.print(F(" Minutos: "));
+    Serial.print(initialMinutes);
+    Serial.print(F(" Restantes: "));
+    Serial.print(remainingSeconds);
+    Serial.println(F("s"));
+
+    if (status == "ACTIVE")
+    {
+      g_operationStatus = OP_ACTIVE;
+      if (initialMinutes > 0)
+      {
+        startOperation(initialMinutes);
+      }
+      else if (remainingSeconds > 0)
+      {
+        // Sincronizar com tempo restante
+        g_remainingSeconds = remainingSeconds;
+        g_isCountingDown = true;
+        if (!g_relayState)
+        {
+          Relay::start();
+          g_relayState = true;
+        }
+        updateDisplay();
+      }
+      publishStatus("ACTIVE");
+    }
+    else if (status == "PAUSED")
+    {
+      pauseOperation();
+      publishStatus("PAUSED");
+    }
+    else if (status == "STOPPED")
+    {
+      stopOperation();
+      publishStatus("STOPPED");
+    }
+    else if (status == "LIBERATED")
+    {
+      // Verifica se tem tempo ou não
+      if (initialMinutes > 0 || remainingSeconds > 0)
+      {
+        g_operationStatus = OP_LIBERATED_TIME;
+        if (initialMinutes > 0)
+        {
+          startOperation(initialMinutes);
+        }
+        else
+        {
+          g_remainingSeconds = remainingSeconds;
+          g_isCountingDown = true;
+          if (!g_relayState)
+          {
+            Relay::start();
+            g_relayState = true;
+          }
+          updateDisplay();
+        }
+        publishStatus("LIBERATED_TIME");
+      }
+      else
+      {
+        liberateWithoutTime();
+        publishStatus("LIBERATED_FREE");
+      }
+    }
+  }
+
+  // Processa mensagens session_data com estrutura aninhada
+  void handleSessionData(const String &message)
+  {
+    Serial.println(F("[SESSION_DATA] Processando mensagem"));
+
+    // Extrair dados da estrutura aninhada "data"
+    int dataStart = message.indexOf("\"data\":");
+    if (dataStart < 0)
+    {
+      Serial.println(F("[SESSION_DATA] Campo 'data' não encontrado"));
+      return;
+    }
+
+    // Encontrar o início do objeto data
+    int dataObjStart = message.indexOf('{', dataStart);
+    if (dataObjStart < 0)
+      return;
+
+    // Extrair a substring do objeto data
+    int braceCount = 1;
+    int dataObjEnd = dataObjStart + 1;
+    while (dataObjEnd < message.length() && braceCount > 0)
+    {
+      if (message.charAt(dataObjEnd) == '{')
+        braceCount++;
+      else if (message.charAt(dataObjEnd) == '}')
+        braceCount--;
+      dataObjEnd++;
+    }
+
+    String dataObj = message.substring(dataObjStart, dataObjEnd);
+    Serial.print(F("[SESSION_DATA] Objeto data extraído: "));
+    Serial.println(dataObj);
+
+    // Parse do objeto data
+    String carId = "";
+    String status = "";
+    int initialMinutes = 0;
+    int remainingSeconds = 0;
+
+    // Extrair carId do objeto data
+    int carIndex = dataObj.indexOf("\"carId\"");
+    if (carIndex >= 0)
+    {
+      int colon = dataObj.indexOf(':', carIndex);
+      int q1 = dataObj.indexOf('"', colon + 1);
+      int q2 = dataObj.indexOf('"', q1 + 1);
+      if (q1 >= 0 && q2 > q1)
+      {
+        carId = dataObj.substring(q1 + 1, q2);
+      }
+    }
+
+    // Extrair status do objeto data
+    int statusIndex = dataObj.indexOf("\"status\"");
+    if (statusIndex >= 0)
+    {
+      int colon = dataObj.indexOf(':', statusIndex);
+      int q1 = dataObj.indexOf('"', colon + 1);
+      int q2 = dataObj.indexOf('"', q1 + 1);
+      if (q1 >= 0 && q2 > q1)
+      {
+        status = dataObj.substring(q1 + 1, q2);
+      }
+    }
+
+    // Extrair initialMinutes do objeto data
+    int minutesIndex = dataObj.indexOf("\"initialMinutes\"");
+    if (minutesIndex >= 0)
+    {
+      int colon = dataObj.indexOf(':', minutesIndex);
+      int comma = dataObj.indexOf(',', colon);
+      int brace = dataObj.indexOf('}', colon);
+      int end = (comma > 0 && comma < brace) ? comma : brace;
+      if (end > colon)
+      {
+        String minutesStr = dataObj.substring(colon + 1, end);
+        minutesStr.trim();
+        initialMinutes = minutesStr.toInt();
+      }
+    }
+
+    // Extrair total_seconds do objeto data
+    int remainingIndex = dataObj.indexOf("\"total_seconds\"");
+    if (remainingIndex >= 0)
+    {
+      int colon = dataObj.indexOf(':', remainingIndex);
+      int comma = dataObj.indexOf(',', colon);
+      int brace = dataObj.indexOf('}', colon);
+      int end = (comma > 0 && comma < brace) ? comma : brace;
+      if (end > colon)
+      {
+        String secondsStr = dataObj.substring(colon + 1, end);
+        secondsStr.trim();
+        remainingSeconds = secondsStr.toInt();
+      }
+    }
+
+    // Validar carId
+    if (carId.length() > 0 && carId != CAR_ID)
+    {
+      Serial.print(F("[SESSION_DATA] Mensagem ignorada - carId: "));
+      Serial.print(carId);
+      Serial.print(F(" (esperado: "));
+      Serial.print(CAR_ID);
+      Serial.println(F(")"));
+      return;
+    }
+
+    // Log dos dados extraídos
+    Serial.print(F("[SESSION_DATA] carId: "));
+    Serial.print(carId);
+    Serial.print(F(" status: "));
+    Serial.print(status);
+    Serial.print(F(" initialMinutes: "));
+    Serial.print(initialMinutes);
+    Serial.print(F(" remainingSeconds: "));
+    Serial.println(remainingSeconds);
+
+    // Processar baseado no status
+    if (status == "ACTIVE")
+    {
+      g_operationStatus = OP_ACTIVE;
+      if (initialMinutes > 0)
+      {
+        startOperation(initialMinutes);
+      }
+      else if (remainingSeconds > 0)
+      {
+        // Sincronizar com tempo restante recebido
+        g_remainingSeconds = remainingSeconds;
+        g_isCountingDown = true;
+        g_lastCountUpdate = millis();
+        if (!g_relayState)
+        {
+          Relay::start();
+          g_relayState = true;
+        }
+        updateDisplay();
+        Serial.print(F("[SESSION_DATA] Sincronizado com "));
+        Serial.print(remainingSeconds);
+        Serial.println(F(" segundos restantes"));
+      }
+      publishStatus("ACTIVE");
+    }
+    else if (status == "PAUSED")
+    {
+      pauseOperation();
+      publishStatus("PAUSED");
+    }
+    else if (status == "STOPPED")
+    {
+      stopOperation();
+      publishStatus("STOPPED");
+    }
+    else if (status == "LIBERATED")
+    {
+      if (initialMinutes > 0 || remainingSeconds > 0)
+      {
+        g_operationStatus = OP_LIBERATED_TIME;
+        if (initialMinutes > 0)
+        {
+          startOperation(initialMinutes);
+        }
+        else
+        {
+          g_remainingSeconds = remainingSeconds;
+          g_isCountingDown = true;
+          g_lastCountUpdate = millis();
+          if (!g_relayState)
+          {
+            Relay::start();
+            g_relayState = true;
+          }
+          updateDisplay();
+        }
+        publishStatus("LIBERATED_TIME");
+      }
+      else
+      {
+        liberateWithoutTime();
+        publishStatus("LIBERATED_FREE");
+      }
     }
   }
 }
@@ -560,9 +1169,12 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
     msg.reserve(length);
     for (size_t i = 0; i < length; i++)
       msg += (char)payload[i];
-    int idx = msg.indexOf("\"action\"");
-    if (idx >= 0)
+
+    // Detectar tipo de mensagem
+    if (msg.indexOf("\"action\"") >= 0)
     {
+      // Mensagem de comando simples
+      int idx = msg.indexOf("\"action\"");
       int colon = msg.indexOf(':', idx);
       int q1 = msg.indexOf('"', colon + 1);
       int q2 = msg.indexOf('"', q1 + 1);
@@ -571,6 +1183,29 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
         String action = msg.substring(q1 + 1, q2);
         App::handleAction(action);
       }
+    }
+    else if (msg.indexOf("\"type\":\"session_data\"") >= 0)
+    {
+      // Mensagem session_data com estrutura aninhada
+      Serial.println(F("[WS] Recebido session_data"));
+      App::handleSessionData(msg);
+    }
+    else if (msg.indexOf("\"carId\"") >= 0 && msg.indexOf("\"status\"") >= 0)
+    {
+      // Mensagem de dados da operação direta (formato antigo)
+      App::handleOperationMessage(msg);
+    }
+    else if (msg.indexOf("\"type\"") >= 0)
+    {
+      // Outras mensagens do sistema (hello, etc) - só loggar
+      Serial.print(F("[WS] Mensagem do sistema: "));
+      Serial.println(msg);
+    }
+    else
+    {
+      // Mensagem desconhecida
+      Serial.print(F("[WS] Mensagem desconhecida: "));
+      Serial.println(msg);
     }
     break;
   }
@@ -780,6 +1415,10 @@ void loop()
   //  App::sendHeartbeat();
   // #endif
   Disp::loop();
+
+  // Atualiza contador de tempo da operação
+  App::updateTimeCounter();
+
   // Se ainda não conectou após várias tentativas, imprime diagnóstico periódico
   if (!webSocket.isConnected() && strlen(WS_HOST_STR) != 0)
   {
