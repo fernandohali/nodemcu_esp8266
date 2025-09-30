@@ -7,27 +7,22 @@
 // Relay original
 constexpr uint8_t RELAY_PIN = 15; // D8
 
-// Display TM1637
-constexpr uint8_t TM1637_DIO = 12; // D6
-constexpr uint8_t TM1637_CLK = 14; // D5
+// LED indicador WiFi
+constexpr uint8_t WIFI_LED_PIN = 5; // D1 - LED que indica conexão WiFi
 
-// Módulo 74HC595 (Shift Register)
-constexpr uint8_t HC595_DATA_PIN = 4;  // D2 - QH/SER/DS (Dados)
-constexpr uint8_t HC595_LATCH_PIN = 0; // D3 - RCLK/LATCH (Travar saída)
-constexpr uint8_t HC595_CLOCK_PIN = 2; // D4 - SCLK/SRCLK (Clock)
+// Módulo Display 74HC595 (4 dígitos 7 segmentos)
+constexpr uint8_t HC595_DATA_PIN = 13;  // D7 - Dados (DIO)
+constexpr uint8_t HC595_LATCH_PIN = 12; // D6 - Latch (RCLK)
+constexpr uint8_t HC595_CLOCK_PIN = 14; // D5 - Clock (SCLK)
 
 #elif defined(ESP32)
 // Relay original
 constexpr uint8_t RELAY_PIN = 2;
 
-// Display TM1637
-constexpr uint8_t TM1637_DIO = 0;
-constexpr uint8_t TM1637_CLK = 4;
-
-// Módulo 74HC595 (Shift Register)
-constexpr uint8_t HC595_DATA_PIN = 4;
-constexpr uint8_t HC595_LATCH_PIN = 0;
-constexpr uint8_t HC595_CLOCK_PIN = 2;
+// Módulo Display 74HC595 (4 dígitos 7 segmentos)
+constexpr uint8_t HC595_DATA_PIN = 13;  // Dados (DIO)
+constexpr uint8_t HC595_LATCH_PIN = 12; // Latch (RCLK)
+constexpr uint8_t HC595_CLOCK_PIN = 14; // Clock (SCLK)
 
 #else
 #error "Plataforma não suportada"

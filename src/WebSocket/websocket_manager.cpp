@@ -5,6 +5,8 @@
 #include "../Display/Display.h"
 #include "../Reley/reley.h"
 #include "../WS/WSUtils.h"
+
+using namespace Operation;
 #include <ESP8266HTTPClient.h>
 
 static WebSocketsClient g_webSocket;
@@ -94,7 +96,7 @@ namespace WebSocketManager
 
     void publishStatus(const char *status)
     {
-        Operation::getState().lastStatus = status;
+        getState().lastStatus = status;
 
         String json;
         json.reserve(128);
@@ -147,7 +149,7 @@ namespace WebSocketManager
         json += CAR_ID_STR;
         json += "\",";
         json += "\"status\":\"";
-        json += Operation::getState().lastStatus;
+        json += getState().lastStatus;
         json += "\",";
         json += "\"relayOn\":";
         json += (Relay::isOn() ? "true" : "false");
@@ -163,25 +165,43 @@ namespace WebSocketManager
         json += ",";
         json += "\"heap\":";
         json += getFreeHeap();
+        json += ",";
+        json += "\"operationState\":\"";
+        json += getState().status == OP_STOPPED ? "STOPPED" : getState().status == OP_ACTIVE       ? "ACTIVE"
+                                                          : getState().status == OP_PAUSED         ? "PAUSED"
+                                                          : getState().status == OP_LIBERATED_TIME ? "LIBERATED_TIME"
+                                                          : getState().status == OP_LIBERATED_FREE ? "LIBERATED_FREE"
+                                                                                                   : "UNKNOWN";
+        json += "\",";
+        json += "\"remainingSeconds\":";
+        json += getState().remainingSeconds;
+        json += ",";
+        json += "\"extraSeconds\":";
+        json += getState().extraSeconds;
+        json += ",";
+        json += "\"isCountingDown\":";
+        json += (getState().isCountingDown ? "true" : "false");
         json += "}";
 
         g_webSocket.sendTXT(json);
-        Operation::getState().sessionSentFrames++;
+        getState().sessionSentFrames++;
 
         if (LOG_VERBOSE)
         {
-            Serial.print(F("[HEARTBEAT] carId="));
-            Serial.print(CAR_ID_STR);
-            Serial.print(F(" status="));
-            Serial.print(Operation::getState().lastStatus);
-            Serial.print(F(" rssi="));
-            Serial.print(Net::rssi());
-            Serial.print(F(" relay="));
-            Serial.print(Relay::isOn() ? F("ON") : F("OFF"));
-            Serial.print(F(" uptime_s="));
-            Serial.print(now / 1000);
-            Serial.print(F(" heap="));
-            Serial.print(getFreeHeap());
+            // Log de heartbeat com melhor formatação visual
+            static int heartbeatCounter = 0;
+            heartbeatCounter++;
+
+            Serial.println(F("+==========================================+"));
+            Serial.printf("| HEARTBEAT #%d\n", heartbeatCounter);
+            Serial.println(F("+------------------------------------------+"));
+            Serial.printf("| Car ID     : %s\n", CAR_ID_STR);
+            Serial.printf("| Status     : %s\n", Operation::getState().lastStatus.c_str());
+            Serial.printf("| RSSI       : %ld dBm\n", Net::rssi());
+            Serial.printf("| Relay      : %s\n", Relay::isOn() ? "ON" : "OFF");
+            Serial.printf("| Uptime     : %lu s\n", now / 1000);
+            Serial.printf("| Free Heap  : %d bytes\n", getFreeHeap());
+            Serial.println(F("+==========================================+"));
             Serial.println();
         }
 
@@ -379,8 +399,12 @@ namespace WebSocketManager
             }
             else if (msg.indexOf("\"type\"") >= 0)
             {
-                Serial.print(F("[WS] Mensagem do sistema: "));
+                Serial.println(F("+==========================================+"));
+                Serial.println(F("| MENSAGEM DO SISTEMA                  |"));
+                Serial.println(F("+------------------------------------------+"));
+                Serial.print(F("| "));
                 Serial.println(msg);
+                Serial.println(F("+==========================================+"));
             }
             else
             {
@@ -404,7 +428,7 @@ namespace WebSocketManager
             state.sessionRecvFrames++;
             if (LOG_VERBOSE)
             {
-                Serial.println(F("[WS] PONG recebido"));
+                Serial.println(F("[WS] PONG recebido - Conexao ativa!"));
             }
             break;
 
@@ -597,6 +621,14 @@ namespace WebSocketManager
             sendHello();
             publishStatus("STOPPED");
         }
+
+// Envio periódico de heartbeat (se habilitado e conectado)
+#if !WS_DISABLE_HEARTBEAT
+        if (g_webSocket.isConnected())
+        {
+            sendHeartbeat();
+        }
+#endif
 
         // Se não conectado e tem host configurado
         if (!g_webSocket.isConnected() && strlen(WS_HOST_STR) != 0)

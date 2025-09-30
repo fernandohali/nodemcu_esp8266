@@ -71,10 +71,10 @@ namespace SystemInfo
         Serial.println(F("--- PERIFÉRICOS ---"));
         Serial.print(F("Relay Pin: "));
         Serial.println(RELAY_PIN);
-        Serial.print(F("Display DIO: "));
-        Serial.println(TM1637_DIO);
-        Serial.print(F("Display CLK: "));
-        Serial.println(TM1637_CLK);
+        Serial.print(F("Display 74HC595 DATA: "));
+        Serial.println(HC595_DATA_PIN);
+        Serial.print(F("Display 74HC595 LATCH: "));
+        Serial.println(HC595_LATCH_PIN);
 
         Serial.println(F("--- 74HC595 SHIFT REGISTER ---"));
         Serial.print(F("Data Pin (D2): "));

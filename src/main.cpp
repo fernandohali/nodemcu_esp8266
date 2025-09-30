@@ -19,6 +19,7 @@
 #include "Display/Display.h"
 #include "Reley/reley.h"
 #include "HC595/HC595.h"
+#include "Status/status_led.h"
 
 // ===== VALIDAÇÃO DE CONFIGURAÇÃO =====
 #ifdef STATIC_IP_ADDR
@@ -89,6 +90,7 @@ void setup()
   Serial.println(F("\n===== INICIANDO SISTEMA ESP8266 ====="));
 
   // ===== INICIALIZAÇÃO DOS MÓDULOS =====
+  StatusLED::begin();
   Relay::begin();
   Disp::begin();
   HC595::begin();
@@ -129,7 +131,9 @@ void setup()
   // Status inicial
   Disp::showStatus("STOPPED");
 
-  Serial.println(F("===== SISTEMA INICIALIZADO =====\n"));
+  Serial.println(F("===== SISTEMA INICIALIZADO ====="));
+  Serial.printf("Tempo de inicialização: %lu ms\n", millis());
+  Serial.println();
 }
 
 /**
@@ -137,8 +141,25 @@ void setup()
  */
 void loop()
 {
+  // ===== STATUS PERIÓDICO DO SISTEMA =====
+  static unsigned long lastSystemStatus = 0;
+  if (millis() - lastSystemStatus > 60000) // A cada 1 minuto
+  {
+    lastSystemStatus = millis();
+    Serial.println(F("+===========================================+"));
+    Serial.println(F("| STATUS DO SISTEMA                     |"));
+    Serial.println(F("+-------------------------------------------+"));
+    Serial.printf("| Uptime     : %lu ms (%.1f min)       |\n", millis(), millis() / 60000.0);
+    Serial.printf("| WiFi       : %s                 |\n", WiFi.isConnected() ? "Conectado  " : "Desconectado");
+    Serial.printf("| RAM livre  : %d bytes            |\n", ESP.getFreeHeap());
+    Serial.printf("| Operacao   : %s                     |\n", Operation::getStatusString());
+    Serial.println(F("+===========================================+"));
+    Serial.println();
+  }
+
   // ===== ATUALIZAÇÃO DOS MÓDULOS =====
   Net::loop();
+  StatusLED::update(); // Atualiza LED WiFi baseado no status da conexão
   WebSocketManager::update();
   Operation::update();
   Disp::loop();

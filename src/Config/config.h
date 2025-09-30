@@ -9,8 +9,8 @@
 #define CAR_ID_STR "CAR-UNDEFINED"
 #endif
 
-static const char *WIFI_SSID = "restic36uesb";      // TODO: mover para secrets
-static const char *WIFI_PASSWORD = "@cpdsrestic36"; // TODO: mover para secrets
+static const char *WIFI_SSID = "WiFi C1N24A";  // TODO: mover para secrets customizado
+static const char *WIFI_PASSWORD = "35250509"; // TODO: idem acima
 static const uint16_t WS_PORT = 8081;
 
 // ===== CONFIGURAÇÕES DE TIMING =====
@@ -19,7 +19,7 @@ static const uint16_t WS_PORT = 8081;
 #endif
 
 #ifndef HEARTBEAT_MS
-#define HEARTBEAT_MS 10000 // 10 segundos
+#define HEARTBEAT_MS 5000 // 5 segundos - mantém servidor sempre informado do status
 #endif
 
 #ifndef WS_BASE_RETRY_MS
@@ -58,6 +58,10 @@ static const uint16_t WS_PORT = 8081;
 // ===== CONFIGURAÇÕES DE CONEXÃO =====
 #ifndef WS_CONNECT_ONCE
 #define WS_CONNECT_ONCE 0
+#endif
+
+#ifndef WS_DISABLE_HEARTBEAT
+#define WS_DISABLE_HEARTBEAT 0 // 0 = heartbeat habilitado, 1 = desabilitado
 #endif
 
 // ===== CORES PARA LOG =====
