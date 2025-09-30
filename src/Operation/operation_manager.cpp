@@ -367,14 +367,15 @@ namespace Operation
 
     void handleSessionData(const String &message)
     {
-        Serial.println(F("\n📋 Recebido dados da sessao..."));
-        // Debug completo apenas se necessário
-        static bool showFullDebug = true;
-        if (showFullDebug)
-        {
-            Serial.printf("Dados: %s...\n", message.substring(0, 50).c_str());
-            showFullDebug = false; // Mostra apenas uma vez
-        }
+        Serial.println(F("\n� === DEBUG COMPLETO DA MENSAGEM ==="));
+        Serial.println(F("�📋 Recebido dados da sessao..."));
+        
+        // Mostra a mensagem COMPLETA para debug
+        Serial.println(F("📨 MENSAGEM COMPLETA RECEBIDA:"));
+        Serial.printf("Tamanho: %d bytes\n", message.length());
+        Serial.println("Conteudo:");
+        Serial.println(message);
+        Serial.println(F("=== FIM MENSAGEM COMPLETA ===\n"));
 
         // Parser JSON melhorado - procura session_data primeiro
         int sessionDataIndex = message.indexOf("\"session_data\":");
@@ -391,32 +392,65 @@ namespace Operation
                 int timeValue = 0;
                 bool found = false;
 
-                // 1. Tenta "minutes":
-                int minutesIdx = sessionDataStr.indexOf("\"minutes\":");
-                if (minutesIdx >= 0)
+                // 1. Tenta "remainingTime":{"total_seconds":1800}
+                int remainingTimeIdx = sessionDataStr.indexOf("\"remainingTime\":");
+                if (remainingTimeIdx >= 0)
                 {
-                    int colonIdx = sessionDataStr.indexOf(":", minutesIdx);
-                    if (colonIdx >= 0)
+                    int totalSecondsIdx = sessionDataStr.indexOf("\"total_seconds\":", remainingTimeIdx);
+                    if (totalSecondsIdx >= 0)
                     {
-                        String numStr = "";
-                        int i = colonIdx + 1;
-                        while ((unsigned int)i < sessionDataStr.length() && (sessionDataStr.charAt(i) == ' ' || sessionDataStr.charAt(i) == '\t'))
-                            i++;
-                        while ((unsigned int)i < sessionDataStr.length() && isDigit(sessionDataStr.charAt(i)))
+                        int colonIdx = sessionDataStr.indexOf(":", totalSecondsIdx);
+                        if (colonIdx >= 0)
                         {
-                            numStr += sessionDataStr.charAt(i);
-                            i++;
-                        }
-                        if (numStr.length() > 0)
-                        {
-                            timeValue = numStr.toInt();
-                            found = true;
-                            Serial.printf("✅ Encontrou 'minutes': %d\n", timeValue);
+                            String numStr = "";
+                            int i = colonIdx + 1;
+                            while ((unsigned int)i < sessionDataStr.length() && (sessionDataStr.charAt(i) == ' ' || sessionDataStr.charAt(i) == '\t'))
+                                i++;
+                            while ((unsigned int)i < sessionDataStr.length() && isDigit(sessionDataStr.charAt(i)))
+                            {
+                                numStr += sessionDataStr.charAt(i);
+                                i++;
+                            }
+                            if (numStr.length() > 0)
+                            {
+                                int seconds = numStr.toInt();
+                                timeValue = seconds / 60; // Converte para minutos
+                                found = true;
+                                Serial.printf("✅ Encontrou 'remainingTime.total_seconds': %d segundos = %d minutos\n", seconds, timeValue);
+                            }
                         }
                     }
                 }
 
-                // 2. Se não encontrou, tenta "duration":
+                // 2. Tenta "minutes":
+                if (!found)
+                {
+                    int minutesIdx = sessionDataStr.indexOf("\"minutes\":");
+                    if (minutesIdx >= 0)
+                    {
+                        int colonIdx = sessionDataStr.indexOf(":", minutesIdx);
+                        if (colonIdx >= 0)
+                        {
+                            String numStr = "";
+                            int i = colonIdx + 1;
+                            while ((unsigned int)i < sessionDataStr.length() && (sessionDataStr.charAt(i) == ' ' || sessionDataStr.charAt(i) == '\t'))
+                                i++;
+                            while ((unsigned int)i < sessionDataStr.length() && isDigit(sessionDataStr.charAt(i)))
+                            {
+                                numStr += sessionDataStr.charAt(i);
+                                i++;
+                            }
+                            if (numStr.length() > 0)
+                            {
+                                timeValue = numStr.toInt();
+                                found = true;
+                                Serial.printf("✅ Encontrou 'minutes': %d\n", timeValue);
+                            }
+                        }
+                    }
+                }
+
+                // 3. Se não encontrou, tenta "duration":
                 if (!found)
                 {
                     int durationIdx = sessionDataStr.indexOf("\"duration\":");
@@ -445,7 +479,7 @@ namespace Operation
                     }
                 }
 
-                // 3. Se não encontrou, tenta "initialMinutes":
+                // 4. Se não encontrou, tenta "initialMinutes":
                 if (!found)
                 {
                     int initialIdx = sessionDataStr.indexOf("\"initialMinutes\":");
