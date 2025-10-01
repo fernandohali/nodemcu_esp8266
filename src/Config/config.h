@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+
 // ===== CONFIGURAÇÕES DE REDE =====
 #ifndef WS_HOST_STR
 #define WS_HOST_STR ""
@@ -9,8 +12,15 @@
 #define CAR_ID_STR "CAR-UNDEFINED"
 #endif
 
-static const char *WIFI_SSID = "WiFi C1N24A";  // TODO: mover para secrets customizado
-static const char *WIFI_PASSWORD = "35250509"; // TODO: idem acima
+// Credenciais WiFi - use as suas próprias credenciais
+#ifndef WIFI_SSID
+#define WIFI_SSID "WiFi C1N24A"
+#endif
+
+#ifndef WIFI_PASSWORD
+#define WIFI_PASSWORD "35250509"
+#endif
+
 static const uint16_t WS_PORT = 8081;
 
 // ===== CONFIGURAÇÕES DE TIMING =====
