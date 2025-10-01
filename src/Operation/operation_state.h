@@ -16,6 +16,7 @@ struct OperationState
     OperationStatus status = OP_STOPPED;
     String sessionCarId = "";
     int initialMinutes = 0;
+    int initialSeconds = 0;
     int remainingSeconds = 0;
     int extraSeconds = 0;
     bool isCountingDown = true;

@@ -87,16 +87,19 @@ namespace Operation
 
     void updateDisplay()
     {
-        // Debug do status atual
-        static unsigned long lastStatusDebug = 0;
-        if (millis() - lastStatusDebug > 5000)
-        { // Debug a cada 5 segundos
-            lastStatusDebug = millis();
-            Serial.printf("[DISPLAY_STATUS] Status: %s | Remaining: %d | Extra: %d | Countdown: %s\n",
-                          getStatusString(),
-                          g_operationState.remainingSeconds,
-                          g_operationState.extraSeconds,
-                          g_operationState.isCountingDown ? "YES" : "NO");
+        // Log apenas mudanças significativas (a cada minuto)
+        static unsigned long lastMinuteLog = 0;
+        static int lastLoggedMinute = -1;
+        int currentMinute = g_operationState.isCountingDown ? g_operationState.remainingSeconds / 60 : g_operationState.extraSeconds / 60;
+        
+        if (currentMinute != lastLoggedMinute && millis() - lastMinuteLog > 30000)
+        {
+            lastMinuteLog = millis();
+            lastLoggedMinute = currentMinute;
+            int secs = g_operationState.isCountingDown ? g_operationState.remainingSeconds % 60 : g_operationState.extraSeconds % 60;
+            Serial.printf("⏱️  %s: %02d:%02d\n", 
+                          g_operationState.isCountingDown ? "Restam" : "Extra",
+                          currentMinute, secs);
         }
 
         if (g_operationState.status == OP_STOPPED)
@@ -136,9 +139,10 @@ namespace Operation
                         displaySeconds = g_operationState.extraSeconds % 60;
                     }
 
-                    char timeStr[16]; // Buffer maior para evitar overflow
-                    snprintf(timeStr, sizeof(timeStr), "%02d:%02d", displayMinutes, displaySeconds);
-                    Disp::showText(timeStr);
+                    // Formato MM:SS para display pausado - dois primeiros dígitos são minutos, últimos são segundos
+                    char timeStr[16];
+                    snprintf(timeStr, sizeof(timeStr), "%02d%02d", displayMinutes, displaySeconds);
+                    Disp::showTime(timeStr);
                 }
                 else
                 {
@@ -170,15 +174,34 @@ namespace Operation
             displaySeconds = g_operationState.extraSeconds % 60;
         }
 
-        char timeStr[16]; // Buffer maior para evitar overflow
-        snprintf(timeStr, sizeof(timeStr), "%02d:%02d", displayMinutes, displaySeconds);
-        Disp::showText(timeStr);
+        // Formato MM:SS para display - dois primeiros dígitos são minutos, últimos são segundos
+        char displayStr[16];
+        snprintf(displayStr, sizeof(displayStr), "%02d%02d", displayMinutes, displaySeconds);
+        Disp::showTime(displayStr);
     }
 
     void start(int minutes)
     {
-        g_operationState.initialMinutes = minutes;
-        g_operationState.remainingSeconds = minutes * 60;
+        startFromSeconds(minutes * 60);
+    }
+
+    void startFromSeconds(int totalSeconds)
+    {
+        if (totalSeconds <= 0)
+        {
+            Serial.println(F("⚠️  Tempo invalido recebido - mantendo operacao parada"));
+            g_operationState.initialMinutes = 0;
+            g_operationState.initialSeconds = 0;
+            g_operationState.remainingSeconds = 0;
+            g_operationState.extraSeconds = 0;
+            g_operationState.isCountingDown = true;
+            updateDisplay();
+            return;
+        }
+
+        g_operationState.initialSeconds = totalSeconds;
+        g_operationState.initialMinutes = totalSeconds / 60;
+        g_operationState.remainingSeconds = totalSeconds;
         g_operationState.extraSeconds = 0;
         g_operationState.isCountingDown = true;
         g_operationState.lastCountUpdate = millis();
@@ -190,8 +213,11 @@ namespace Operation
             g_operationState.relayState = true;
         }
 
+        int displayMinutes = totalSeconds / 60;
+        int displaySeconds = totalSeconds % 60;
+
         Serial.println(F("\n🚀 === OPERACAO INICIADA ==="));
-        Serial.printf("⏰ Duracao: %d min (%d seg)\n", minutes, minutes * 60);
+        Serial.printf("⏰ Duracao: %d min %02d seg (%d seg)\n", displayMinutes, displaySeconds, totalSeconds);
         Serial.printf("📊 Status: %s\n", getStatusString());
         Serial.printf("🔄 Modo: %s\n", g_operationState.isCountingDown ? "Regressiva" : "Progressiva");
         Serial.println(F("=============================\n"));
@@ -367,277 +393,134 @@ namespace Operation
 
     void handleSessionData(const String &message)
     {
-        Serial.println(F("\n� === DEBUG COMPLETO DA MENSAGEM ==="));
-        Serial.println(F("�📋 Recebido dados da sessao..."));
-        
-        // Mostra a mensagem COMPLETA para debug
-        Serial.println(F("📨 MENSAGEM COMPLETA RECEBIDA:"));
-        Serial.printf("Tamanho: %d bytes\n", message.length());
-        Serial.println("Conteudo:");
-        Serial.println(message);
-        Serial.println(F("=== FIM MENSAGEM COMPLETA ===\n"));
+        Serial.println(F("\n� === DADOS DO SERVIDOR RECEBIDOS ==="));
+
+        auto readNumberAfter = [&](const String &source, int anchorIndex) -> int {
+            if (anchorIndex < 0)
+            {
+                return -1;
+            }
+
+            int colonIdx = source.indexOf(':', anchorIndex);
+            if (colonIdx < 0)
+            {
+                return -1;
+            }
+
+            String numStr = "";
+            int i = colonIdx + 1;
+            while ((unsigned int)i < source.length() && (source.charAt(i) == ' ' || source.charAt(i) == '\t'))
+            {
+                i++;
+            }
+            while ((unsigned int)i < source.length() && isDigit(source.charAt(i)))
+            {
+                numStr += source.charAt(i);
+                i++;
+            }
+
+            if (numStr.length() == 0)
+            {
+                return -1;
+            }
+
+            return numStr.toInt();
+        };
 
         // Parser JSON melhorado - procura session_data primeiro
         int sessionDataIndex = message.indexOf("\"session_data\":");
         if (sessionDataIndex >= 0)
         {
-            // Se encontrou session_data, procura dentro dessa seção
             int startBrace = message.indexOf("{", sessionDataIndex);
             if (startBrace >= 0)
             {
-                // Procura campos dentro de session_data
                 String sessionDataStr = message.substring(startBrace);
 
-                // Tenta múltiplos campos de tempo
-                int timeValue = 0;
-                bool found = false;
+                int parsedSeconds = -1;
+                int parsedMinutes = -1;
 
-                // 1. Tenta "remainingTime":{"total_seconds":1800}
                 int remainingTimeIdx = sessionDataStr.indexOf("\"remainingTime\":");
                 if (remainingTimeIdx >= 0)
                 {
                     int totalSecondsIdx = sessionDataStr.indexOf("\"total_seconds\":", remainingTimeIdx);
-                    if (totalSecondsIdx >= 0)
+                    int seconds = readNumberAfter(sessionDataStr, totalSecondsIdx);
+                    if (seconds >= 0)
                     {
-                        int colonIdx = sessionDataStr.indexOf(":", totalSecondsIdx);
-                        if (colonIdx >= 0)
+                        parsedSeconds = seconds;
+                        parsedMinutes = seconds / 60;
+                        Serial.printf("⏰ Tempo configurado no servidor: %02d:%02d (%d segundos)\n",
+                                      parsedMinutes, seconds % 60, seconds);
+                    }
+                }
+
+                int minutesIdx = sessionDataStr.indexOf("\"minutes\":");
+                if (minutesIdx >= 0)
+                {
+                    int minutes = readNumberAfter(sessionDataStr, minutesIdx);
+                    if (minutes >= 0)
+                    {
+                        parsedMinutes = minutes;
+                        if (parsedSeconds < 0)
                         {
-                            String numStr = "";
-                            int i = colonIdx + 1;
-                            while ((unsigned int)i < sessionDataStr.length() && (sessionDataStr.charAt(i) == ' ' || sessionDataStr.charAt(i) == '\t'))
-                                i++;
-                            while ((unsigned int)i < sessionDataStr.length() && isDigit(sessionDataStr.charAt(i)))
-                            {
-                                numStr += sessionDataStr.charAt(i);
-                                i++;
-                            }
-                            if (numStr.length() > 0)
-                            {
-                                int seconds = numStr.toInt();
-                                timeValue = seconds / 60; // Converte para minutos
-                                found = true;
-                                Serial.printf("✅ Encontrou 'remainingTime.total_seconds': %d segundos = %d minutos\n", seconds, timeValue);
-                            }
+                            parsedSeconds = minutes * 60;
                         }
                     }
                 }
 
-                // 2. Tenta "minutes":
-                if (!found)
+                int durationIdx = sessionDataStr.indexOf("\"duration\":");
+                if (durationIdx >= 0)
                 {
-                    int minutesIdx = sessionDataStr.indexOf("\"minutes\":");
-                    if (minutesIdx >= 0)
+                    int seconds = readNumberAfter(sessionDataStr, durationIdx);
+                    if (seconds >= 0)
                     {
-                        int colonIdx = sessionDataStr.indexOf(":", minutesIdx);
-                        if (colonIdx >= 0)
+                        parsedSeconds = seconds;
+                        parsedMinutes = seconds / 60;
+                    }
+                }
+
+                int initialIdx = sessionDataStr.indexOf("\"initialMinutes\":");
+                if (initialIdx >= 0)
+                {
+                    int minutes = readNumberAfter(sessionDataStr, initialIdx);
+                    if (minutes >= 0)
+                    {
+                        parsedMinutes = minutes;
+                        if (parsedSeconds < 0)
                         {
-                            String numStr = "";
-                            int i = colonIdx + 1;
-                            while ((unsigned int)i < sessionDataStr.length() && (sessionDataStr.charAt(i) == ' ' || sessionDataStr.charAt(i) == '\t'))
-                                i++;
-                            while ((unsigned int)i < sessionDataStr.length() && isDigit(sessionDataStr.charAt(i)))
-                            {
-                                numStr += sessionDataStr.charAt(i);
-                                i++;
-                            }
-                            if (numStr.length() > 0)
-                            {
-                                timeValue = numStr.toInt();
-                                found = true;
-                                Serial.printf("✅ Encontrou 'minutes': %d\n", timeValue);
-                            }
+                            parsedSeconds = minutes * 60;
                         }
                     }
                 }
 
-                // 3. Se não encontrou, tenta "duration":
-                if (!found)
+                if (parsedSeconds > 0)
                 {
-                    int durationIdx = sessionDataStr.indexOf("\"duration\":");
-                    if (durationIdx >= 0)
-                    {
-                        int colonIdx = sessionDataStr.indexOf(":", durationIdx);
-                        if (colonIdx >= 0)
-                        {
-                            String numStr = "";
-                            int i = colonIdx + 1;
-                            while ((unsigned int)i < sessionDataStr.length() && (sessionDataStr.charAt(i) == ' ' || sessionDataStr.charAt(i) == '\t'))
-                                i++;
-                            while ((unsigned int)i < sessionDataStr.length() && isDigit(sessionDataStr.charAt(i)))
-                            {
-                                numStr += sessionDataStr.charAt(i);
-                                i++;
-                            }
-                            if (numStr.length() > 0)
-                            {
-                                int seconds = numStr.toInt();
-                                timeValue = seconds / 60; // Convert to minutes
-                                found = true;
-                                Serial.printf("✅ Encontrou 'duration': %d segundos = %d minutos\n", seconds, timeValue);
-                            }
-                        }
-                    }
+                    Serial.printf("✅ Sessão iniciada: %02d:%02d\n", parsedSeconds / 60, parsedSeconds % 60);
+                    Serial.println(F("========================================\n"));
+                    
+                    startFromSeconds(parsedSeconds);
+                    return;
                 }
 
-                // 4. Se não encontrou, tenta "initialMinutes":
-                if (!found)
+                if (parsedMinutes > 0)
                 {
-                    int initialIdx = sessionDataStr.indexOf("\"initialMinutes\":");
-                    if (initialIdx >= 0)
-                    {
-                        int colonIdx = sessionDataStr.indexOf(":", initialIdx);
-                        if (colonIdx >= 0)
-                        {
-                            String numStr = "";
-                            int i = colonIdx + 1;
-                            while ((unsigned int)i < sessionDataStr.length() && (sessionDataStr.charAt(i) == ' ' || sessionDataStr.charAt(i) == '\t'))
-                                i++;
-                            while ((unsigned int)i < sessionDataStr.length() && isDigit(sessionDataStr.charAt(i)))
-                            {
-                                numStr += sessionDataStr.charAt(i);
-                                i++;
-                            }
-                            if (numStr.length() > 0)
-                            {
-                                timeValue = numStr.toInt();
-                                found = true;
-                                Serial.printf("✅ Encontrou 'initialMinutes': %d\n", timeValue);
-                            }
-                        }
-                    }
-                }
+                    Serial.printf("✅ Sessão iniciada: %02d:00\n", parsedMinutes);
+                    Serial.println(F("========================================\n"));
 
-                if (found && timeValue > 0)
-                {
-                    Serial.println(F("✅ === SESSAO DO SERVIDOR RECEBIDA ==="));
-                    Serial.printf("⏰ TEMPO CONFIGURADO: %d minutos\n", timeValue);
-                    Serial.printf("📊 Iniciando operacao com %d min (%d seg)\n", timeValue, timeValue * 60);
-                    Serial.printf("🔄 Sobrescrevendo operacao local anterior\n");
-                    Serial.println(F("========================================"));
-
-                    // Inicia a operação com o tempo correto
-                    start(timeValue);
+                    start(parsedMinutes);
                     return;
                 }
             }
         }
 
-        // Fallback: Parser simples para compatibilidade
-        int durationIndex = message.indexOf("\"duration\":");
-        if (durationIndex == -1)
+        if (message.indexOf("session_data") >= 0 && message.indexOf("null") >= 0)
         {
-            durationIndex = message.indexOf("\"minutes\":");
+            Serial.println(F("⚠️  Nenhuma sessão ativa no servidor"));
         }
-        if (durationIndex == -1)
+        else
         {
-            durationIndex = message.indexOf("\"initialMinutes\":");
+            Serial.println(F("❌ Dados de tempo não encontrados na mensagem"));
         }
-        if (durationIndex == -1)
-        {
-            durationIndex = message.indexOf("\"remainingTime\":");
-        }
-
-        if (durationIndex >= 0)
-        {
-            // Encontra o valor após os dois pontos
-            int colonIndex = message.indexOf(":", durationIndex);
-            if (colonIndex >= 0)
-            {
-                // Extrai o número
-                String numberStr = "";
-                int i = colonIndex + 1;
-
-                // Pula espaços
-                while ((unsigned int)i < message.length() && (message.charAt(i) == ' ' || message.charAt(i) == '\t'))
-                {
-                    i++;
-                }
-
-                // Extrai dígitos
-                while ((unsigned int)i < message.length() && isDigit(message.charAt(i)))
-                {
-                    numberStr += message.charAt(i);
-                    i++;
-                }
-
-                if (numberStr.length() > 0)
-                {
-                    int value = numberStr.toInt();
-                    int minutes = value;
-
-                    // Se encontrou remainingTime, valor está em segundos - converter para minutos
-                    if (message.indexOf("\"remainingTime\":") >= 0 && value > 60)
-                    {
-                        minutes = value / 60; // Converte segundos para minutos
-                        Serial.printf("🔄 Convertendo %d segundos para %d minutos\n", value, minutes);
-                    }
-
-                    if (minutes > 0)
-                    {
-                        Serial.println(F("✅ === SESSAO DO SERVIDOR RECEBIDA ==="));
-                        Serial.printf("⏰ TEMPO CONFIGURADO: %d minutos\n", minutes);
-                        Serial.printf("📊 Iniciando operacao com %d min (%d seg)\n", minutes, minutes * 60);
-                        Serial.printf("🔄 Sobrescrevendo operacao local anterior\n");
-                        Serial.println(F("========================================"));
-
-                        // Inicia a operação com o tempo correto
-                        start(minutes);
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Se não conseguiu extrair, procura por outras variações
-        int timeIndex = message.indexOf("\"time\":");
-        if (timeIndex >= 0)
-        {
-            int colonIndex = message.indexOf(":", timeIndex);
-            if (colonIndex >= 0)
-            {
-                String timeValue = "";
-                int i = colonIndex + 1;
-                while ((unsigned int)i < message.length() && message.charAt(i) != ',' && message.charAt(i) != '}')
-                {
-                    if (message.charAt(i) != ' ' && message.charAt(i) != '"')
-                    {
-                        timeValue += message.charAt(i);
-                    }
-                    i++;
-                }
-
-                int timeMinutes = timeValue.toInt();
-                if (timeMinutes > 0)
-                {
-                    Serial.printf("⏰ TEMPO ALTERNATIVO: %d minutos\n", timeMinutes);
-                    start(timeMinutes);
-                    return;
-                }
-            }
-        }
-
-        Serial.println(F("❌ Nenhum tempo valido encontrado na mensagem"));
-        Serial.printf("📨 MSG COMPLETA: %s\n", message.c_str());
-        Serial.printf("📏 Tamanho: %d bytes\n", message.length());
-
-        // Debug adicional das variações procuradas
-        Serial.printf("🔍 Procurou 'duration': %s\n", message.indexOf("\"duration\":") >= 0 ? "ENCONTRADO" : "NAO ENCONTRADO");
-        Serial.printf("🔍 Procurou 'minutes': %s\n", message.indexOf("\"minutes\":") >= 0 ? "ENCONTRADO" : "NAO ENCONTRADO");
-        Serial.printf("🔍 Procurou 'initialMinutes': %s\n", message.indexOf("\"initialMinutes\":") >= 0 ? "ENCONTRADO" : "NAO ENCONTRADO");
-        Serial.printf("🔍 Procurou 'remainingTime': %s\n", message.indexOf("\"remainingTime\":") >= 0 ? "ENCONTRADO" : "NAO ENCONTRADO");
-        Serial.printf("🔍 Procurou 'time': %s\n", message.indexOf("\"time\":") >= 0 ? "ENCONTRADO" : "NAO ENCONTRADO");
-
-        // Verifica se tem session_data
-        if (message.indexOf("session_data") >= 0)
-        {
-            Serial.println("📋 Mensagem contem 'session_data'");
-            if (message.indexOf("null") >= 0)
-            {
-                Serial.println("⚠️  session_data eh NULL - sem sessao ativa no servidor");
-            }
-        }
-
-        Serial.println(F("=== FIM DEBUG SESSAO ==="));
+        Serial.println(F("========================================\n"));
     }
 
 } // namespace Operation

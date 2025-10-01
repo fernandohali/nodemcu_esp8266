@@ -12,6 +12,7 @@ namespace Operation
 
     // ===== CONTROLE DE OPERAÇÃO =====
     void start(int minutes);
+    void startFromSeconds(int totalSeconds);
     void stop();
     void pause();
     void resume();
