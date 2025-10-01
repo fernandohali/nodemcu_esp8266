@@ -12,7 +12,7 @@ namespace Net
     static const char *g_pass = nullptr;
     static const char *g_hostname = nullptr;
     static unsigned long lastCheck = 0;
-    static bool mdnsStarted = false; // mDNS desabilitado
+    // mDNS desabilitado - variável removida
     static bool autoReconnect = true;
     static bool staticConfigured = false;
     static IPAddress staticIp, staticGw, staticMask, staticDns1, staticDns2;
