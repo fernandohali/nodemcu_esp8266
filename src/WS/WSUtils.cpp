@@ -29,24 +29,18 @@ namespace WSUtils
             return false;
         }
 
-        Serial.print(F("[WSUtils] Testando conectividade com "));
-        Serial.print(host);
-        Serial.print(":");
-        Serial.print(port);
-        Serial.print(F("... "));
-
         WiFiClient client;
         bool connected = client.connect(host, port);
 
         if (connected)
         {
-            Serial.println(F("OK"));
+            Serial.printf("🔗 Conectado: %s:%d\n", host, port);
             client.stop();
             return true;
         }
         else
         {
-            Serial.println(F("FALHA"));
+            Serial.printf("❌ Falha conexão: %s:%d\n", host, port);
             return false;
         }
     }
