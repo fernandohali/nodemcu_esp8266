@@ -71,19 +71,19 @@ namespace Disp
         // A ordem pode precisar ser ajustada dependendo da configuração do hardware
 
         // Primeiro 74HC595D (controla dígitos 3 e 4 - lado direito)
-        // Dígito 4 (mais à direita) - com dois pontos se necessário
-        uint8_t digit4_data = digit4;
+        // Dígito 4 (mais à direita)
+        shiftOut(HC595_DATA_PIN, HC595_CLOCK_PIN, MSBFIRST, digit4);
+
+        // Dígito 3 - recebe o ponto inferior do “:”
+        uint8_t digit3_data = digit3;
         if (colonOn)
         {
-            digit4_data |= 0b10000000; // Ponto decimal para dois pontos
+            digit3_data |= 0b10000000;
         }
-        shiftOut(HC595_DATA_PIN, HC595_CLOCK_PIN, MSBFIRST, digit4_data);
-
-        // Dígito 3
-        shiftOut(HC595_DATA_PIN, HC595_CLOCK_PIN, MSBFIRST, digit3);
+        shiftOut(HC595_DATA_PIN, HC595_CLOCK_PIN, MSBFIRST, digit3_data);
 
         // Segundo 74HC595D (controla dígitos 1 e 2 - lado esquerdo)
-        // Dígito 2 - com dois pontos no meio se necessário
+        // Dígito 2 - recebe o ponto superior do “:”
         uint8_t digit2_data = digit2;
         if (colonOn)
         {
