@@ -1,10 +1,10 @@
-#include "operation_manager.h"
+﻿#include "operation_manager.h"
 #include "../Display/Display.h"
 #include "../Reley/reley.h"
 #include "../HC595/HC595.h"
 #include "../Config/config.h"
 
-// Estado global da operação
+// Estado global da operaÃ§Ã£o
 OperationState g_operationState;
 
 namespace Operation
@@ -35,7 +35,7 @@ namespace Operation
         {
             g_operationState.lastCountUpdate = now;
 
-            // Só conta se estiver em modo ativo ou liberado com tempo
+            // SÃ³ conta se estiver em modo ativo ou liberado com tempo
             if (g_operationState.status == OP_ACTIVE ||
                 g_operationState.status == OP_LIBERATED_TIME)
             {
@@ -47,13 +47,13 @@ namespace Operation
                     {
                         g_operationState.remainingSeconds--;
 
-                        // Log apenas a cada minuto ou nos últimos 10 segundos
+                        // Log apenas a cada minuto ou nos Ãºltimos 10 segundos
                         if ((g_operationState.remainingSeconds % 60 == 0) ||
                             (g_operationState.remainingSeconds <= 10 && g_operationState.remainingSeconds > 0))
                         {
                             int mins = g_operationState.remainingSeconds / 60;
                             int secs = g_operationState.remainingSeconds % 60;
-                            Serial.printf("⏳ Restam: %02d:%02d\n", mins, secs);
+                            Serial.printf("â³ Restam: %02d:%02d\n", mins, secs);
                         }
                     }
                     else
@@ -61,9 +61,9 @@ namespace Operation
                         // Chegou em 0:00, muda para contagem progressiva
                         g_operationState.isCountingDown = false;
                         g_operationState.extraSeconds = 0;
-                        Serial.println(F("\n⏰ TEMPO ESGOTADO!"));
-                        Serial.println(F("🔄 Iniciando contagem progressiva..."));
-                        Serial.println(F("⚠️  Sistema em tempo extra!\n"));
+                        Serial.println(F("\nâ° TEMPO ESGOTADO!"));
+                        Serial.println(F("ðŸ”„ Iniciando contagem progressiva..."));
+                        Serial.println(F("âš ï¸  Sistema em tempo extra!\n"));
                     }
                 }
                 else
@@ -76,7 +76,7 @@ namespace Operation
                     {
                         int mins = g_operationState.extraSeconds / 60;
                         int secs = g_operationState.extraSeconds % 60;
-                        Serial.printf("⚠️  Tempo extra: +%02d:%02d\n", mins, secs);
+                        Serial.printf("âš ï¸  Tempo extra: +%02d:%02d\n", mins, secs);
                     }
                 }
 
@@ -87,17 +87,17 @@ namespace Operation
 
     void updateDisplay()
     {
-        // Log apenas mudanças significativas (a cada minuto)
+        // Log apenas mudanÃ§as significativas (a cada minuto)
         static unsigned long lastMinuteLog = 0;
         static int lastLoggedMinute = -1;
         int currentMinute = g_operationState.isCountingDown ? g_operationState.remainingSeconds / 60 : g_operationState.extraSeconds / 60;
-        
+
         if (currentMinute != lastLoggedMinute && millis() - lastMinuteLog > 30000)
         {
             lastMinuteLog = millis();
             lastLoggedMinute = currentMinute;
             int secs = g_operationState.isCountingDown ? g_operationState.remainingSeconds % 60 : g_operationState.extraSeconds % 60;
-            Serial.printf("⏱️  %s: %02d:%02d\n", 
+            Serial.printf("â±ï¸  %s: %02d:%02d\n",
                           g_operationState.isCountingDown ? "Restam" : "Extra",
                           currentMinute, secs);
         }
@@ -139,21 +139,21 @@ namespace Operation
                         displaySeconds = g_operationState.extraSeconds % 60;
                     }
 
-                    // Formato MM:SS para display pausado - dois primeiros dígitos são minutos, últimos são segundos
+                    // Formato MM:SS para display pausado - dois primeiros dÃ­gitos sÃ£o minutos, Ãºltimos sÃ£o segundos
                     char timeStr[16];
                     snprintf(timeStr, sizeof(timeStr), "%02d%02d", displayMinutes, displaySeconds);
                     Disp::showTime(timeStr);
                 }
                 else
                 {
-                    Disp::showText("    "); // Espaços em branco para piscar
+                    Disp::showText("    "); // EspaÃ§os em branco para piscar
                 }
             }
             return;
         }
 
         // Para os outros estados (ACTIVE, LIBERATED_TIME), mostra o tempo
-        // Se não há tempo definido ainda (aguardando servidor), mostra "----"
+        // Se nÃ£o hÃ¡ tempo definido ainda (aguardando servidor), mostra "----"
         if (g_operationState.isCountingDown && g_operationState.remainingSeconds == 0 &&
             g_operationState.extraSeconds == 0)
         {
@@ -174,7 +174,7 @@ namespace Operation
             displaySeconds = g_operationState.extraSeconds % 60;
         }
 
-        // Formato MM:SS para display - dois primeiros dígitos são minutos, últimos são segundos
+        // Formato MM:SS para display - dois primeiros dÃ­gitos sÃ£o minutos, Ãºltimos sÃ£o segundos
         char displayStr[16];
         snprintf(displayStr, sizeof(displayStr), "%02d%02d", displayMinutes, displaySeconds);
         Disp::showTime(displayStr);
@@ -189,7 +189,7 @@ namespace Operation
     {
         if (totalSeconds <= 0)
         {
-            Serial.println(F("⚠️  Tempo invalido recebido - mantendo operacao parada"));
+            Serial.println(F("âš ï¸  Tempo invalido recebido - mantendo operacao parada"));
             g_operationState.initialMinutes = 0;
             g_operationState.initialSeconds = 0;
             g_operationState.remainingSeconds = 0;
@@ -216,10 +216,10 @@ namespace Operation
         int displayMinutes = totalSeconds / 60;
         int displaySeconds = totalSeconds % 60;
 
-        Serial.println(F("\n🚀 === OPERACAO INICIADA ==="));
-        Serial.printf("⏰ Duracao: %d min %02d seg (%d seg)\n", displayMinutes, displaySeconds, totalSeconds);
-        Serial.printf("📊 Status: %s\n", getStatusString());
-        Serial.printf("🔄 Modo: %s\n", g_operationState.isCountingDown ? "Regressiva" : "Progressiva");
+        Serial.println(F("\nðŸš€ === OPERACAO INICIADA ==="));
+        Serial.printf("â° Duracao: %d min %02d seg (%d seg)\n", displayMinutes, displaySeconds, totalSeconds);
+        Serial.printf("ðŸ“Š Status: %s\n", getStatusString());
+        Serial.printf("ðŸ”„ Modo: %s\n", g_operationState.isCountingDown ? "Regressiva" : "Progressiva");
         Serial.println(F("=============================\n"));
 
         updateDisplay();
@@ -239,10 +239,10 @@ namespace Operation
             g_operationState.relayState = false;
         }
 
-        Serial.println(F("\n🛑 === OPERACAO PARADA ==="));
-        Serial.printf("⏱️  Tempo total: %lu seg\n",
+        Serial.println(F("\nðŸ›‘ === OPERACAO PARADA ==="));
+        Serial.printf("â±ï¸  Tempo total: %lu seg\n",
                       (millis() - (g_operationState.lastCountUpdate > 0 ? g_operationState.lastCountUpdate : millis())) / 1000);
-        Serial.printf("📊 Status final: %s\n", getStatusString());
+        Serial.printf("ðŸ“Š Status final: %s\n", getStatusString());
         Serial.println(F("==========================\n"));
         updateDisplay();
     }
@@ -255,7 +255,7 @@ namespace Operation
             g_operationState.status = OP_PAUSED;
             int remainingMins = g_operationState.remainingSeconds / 60;
             int remainingSecs = g_operationState.remainingSeconds % 60;
-            Serial.printf("⏸️  PAUSADO - Restam: %02d:%02d\n", remainingMins, remainingSecs);
+            Serial.printf("â¸ï¸  PAUSADO - Restam: %02d:%02d\n", remainingMins, remainingSecs);
         }
     }
 
@@ -267,7 +267,7 @@ namespace Operation
             g_operationState.lastCountUpdate = millis();
             int remainingMins = g_operationState.remainingSeconds / 60;
             int remainingSecs = g_operationState.remainingSeconds % 60;
-            Serial.printf("▶️  RESUMIDO - Continuando: %02d:%02d\n", remainingMins, remainingSecs);
+            Serial.printf("â–¶ï¸  RESUMIDO - Continuando: %02d:%02d\n", remainingMins, remainingSecs);
         }
     }
 
@@ -300,13 +300,13 @@ namespace Operation
         // Comandos simples
         if (action == "start")
         {
-            Serial.println(F("📥 COMANDO START RECEBIDO"));
-            Serial.println(F("🚀 Ativando operacao - aguardando tempo do servidor..."));
+            Serial.println(F("ðŸ“¥ COMANDO START RECEBIDO"));
+            Serial.println(F("ðŸš€ Ativando operacao - aguardando tempo do servidor..."));
             g_operationState.status = OP_ACTIVE; // Ativa para ligar relay
             g_operationState.lastCountUpdate = millis();
 
-            // Configura valores temporários até receber dados do servidor
-            g_operationState.remainingSeconds = 0; // Será sobrescrito pelo servidor
+            // Configura valores temporÃ¡rios atÃ© receber dados do servidor
+            g_operationState.remainingSeconds = 0; // SerÃ¡ sobrescrito pelo servidor
             g_operationState.extraSeconds = 0;
             g_operationState.isCountingDown = true;
 
@@ -315,12 +315,12 @@ namespace Operation
             {
                 Relay::start();
                 g_operationState.relayState = true;
-                Serial.println(F("⚡ Relay ligado (aguardando tempo do servidor)"));
+                Serial.println(F("âš¡ Relay ligado (aguardando tempo do servidor)"));
             }
 
             // Mostra "aguardando" no display
             Disp::showText("----");
-            Serial.println(F("📺 Display: Aguardando dados do servidor..."));
+            Serial.println(F("ðŸ“º Display: Aguardando dados do servidor..."));
         }
         else if (action == "stop")
         {
@@ -360,12 +360,12 @@ namespace Operation
         else if (action == "hc595_all_on")
         {
             HC595::allOn();
-            Serial.println(F("[HC595] Todas as saídas ligadas"));
+            Serial.println(F("[HC595] Todas as saÃ­das ligadas"));
         }
         else if (action == "hc595_all_off")
         {
             HC595::allOff();
-            Serial.println(F("[HC595] Todas as saídas desligadas"));
+            Serial.println(F("[HC595] Todas as saÃ­das desligadas"));
         }
         else if (action == "hc595_running_light")
         {
@@ -384,8 +384,8 @@ namespace Operation
 
     void handleOperationMessage(const String &message)
     {
-        // Implementação simplificada - usar apenas para comandos básicos
-        Serial.print(F("[OPERATION] Processando mensagem de operação: "));
+        // ImplementaÃ§Ã£o simplificada - usar apenas para comandos bÃ¡sicos
+        Serial.print(F("[OPERATION] Processando mensagem de operaÃ§Ã£o: "));
         Serial.println(message.substring(0, 50) + "...");
 
         // TODO: Implementar parser JSON completo
@@ -393,134 +393,120 @@ namespace Operation
 
     void handleSessionData(const String &message)
     {
-        Serial.println(F("\n� === DADOS DO SERVIDOR RECEBIDOS ==="));
+        Serial.println(F("\n+==========================================+"));
+        Serial.println(F("|   ðŸ“¦ SESSÃƒO RECEBIDA DO SERVIDOR        |"));
+        Serial.println(F("+==========================================+"));
 
-        auto readNumberAfter = [&](const String &source, int anchorIndex) -> int {
-            if (anchorIndex < 0)
-            {
-                return -1;
-            }
-
+        auto readNumberAfter = [&](const String &source, int anchorIndex) -> int
+        {
+            if (anchorIndex < 0) return -1;
             int colonIdx = source.indexOf(':', anchorIndex);
-            if (colonIdx < 0)
-            {
-                return -1;
-            }
+            if (colonIdx < 0) return -1;
 
             String numStr = "";
             int i = colonIdx + 1;
             while ((unsigned int)i < source.length() && (source.charAt(i) == ' ' || source.charAt(i) == '\t'))
-            {
                 i++;
-            }
             while ((unsigned int)i < source.length() && isDigit(source.charAt(i)))
             {
                 numStr += source.charAt(i);
                 i++;
             }
-
-            if (numStr.length() == 0)
-            {
-                return -1;
-            }
-
-            return numStr.toInt();
+            return (numStr.length() > 0) ? numStr.toInt() : -1;
         };
 
-        // Parser JSON melhorado - procura session_data primeiro
+        // Procura por "data" ou "session_data"
+        int dataIndex = message.indexOf("\"data\":");
         int sessionDataIndex = message.indexOf("\"session_data\":");
-        if (sessionDataIndex >= 0)
+        int targetIndex = (dataIndex >= 0) ? dataIndex : sessionDataIndex;
+        
+        if (targetIndex >= 0)
         {
-            int startBrace = message.indexOf("{", sessionDataIndex);
+            int startBrace = message.indexOf("{", targetIndex);
             if (startBrace >= 0)
             {
                 String sessionDataStr = message.substring(startBrace);
-
                 int parsedSeconds = -1;
                 int parsedMinutes = -1;
 
+                // 1. Tenta extrair remainingTime.total_seconds
                 int remainingTimeIdx = sessionDataStr.indexOf("\"remainingTime\":");
                 if (remainingTimeIdx >= 0)
                 {
-                    int totalSecondsIdx = sessionDataStr.indexOf("\"total_seconds\":", remainingTimeIdx);
-                    int seconds = readNumberAfter(sessionDataStr, totalSecondsIdx);
-                    if (seconds >= 0)
+                    int objStart = sessionDataStr.indexOf("{", remainingTimeIdx);
+                    if (objStart >= 0)
                     {
-                        parsedSeconds = seconds;
-                        parsedMinutes = seconds / 60;
-                        Serial.printf("⏰ Tempo configurado no servidor: %02d:%02d (%d segundos)\n",
-                                      parsedMinutes, seconds % 60, seconds);
-                    }
-                }
-
-                int minutesIdx = sessionDataStr.indexOf("\"minutes\":");
-                if (minutesIdx >= 0)
-                {
-                    int minutes = readNumberAfter(sessionDataStr, minutesIdx);
-                    if (minutes >= 0)
-                    {
-                        parsedMinutes = minutes;
-                        if (parsedSeconds < 0)
+                        String remainingTimeStr = sessionDataStr.substring(objStart);
+                        int totalSecondsIdx = remainingTimeStr.indexOf("\"total_seconds\":");
+                        int seconds = readNumberAfter(remainingTimeStr, totalSecondsIdx);
+                        if (seconds >= 0)
                         {
-                            parsedSeconds = minutes * 60;
+                            parsedSeconds = seconds;
+                            parsedMinutes = seconds / 60;
+                            Serial.printf("| â° Tempo restante: %02d:%02d (%d s)    |\n", 
+                                          parsedMinutes, seconds % 60, seconds);
                         }
                     }
                 }
 
-                int durationIdx = sessionDataStr.indexOf("\"duration\":");
-                if (durationIdx >= 0)
+                // 2. Se nÃ£o encontrou, tenta duration
+                if (parsedSeconds < 0)
                 {
+                    int durationIdx = sessionDataStr.indexOf("\"duration\":");
                     int seconds = readNumberAfter(sessionDataStr, durationIdx);
                     if (seconds >= 0)
                     {
                         parsedSeconds = seconds;
                         parsedMinutes = seconds / 60;
+                        Serial.printf("| â° DuraÃ§Ã£o: %02d:%02d (%d s)           |\n", 
+                                      parsedMinutes, seconds % 60, seconds);
                     }
                 }
 
-                int initialIdx = sessionDataStr.indexOf("\"initialMinutes\":");
-                if (initialIdx >= 0)
+                // 3. Extrai outras informaÃ§Ãµes para exibir
+                int initialMinIdx = sessionDataStr.indexOf("\"initialMinutes\":");
+                if (initialMinIdx >= 0)
                 {
-                    int minutes = readNumberAfter(sessionDataStr, initialIdx);
-                    if (minutes >= 0)
+                    int mins = readNumberAfter(sessionDataStr, initialMinIdx);
+                    if (mins >= 0)
                     {
-                        parsedMinutes = minutes;
-                        if (parsedSeconds < 0)
-                        {
-                            parsedSeconds = minutes * 60;
-                        }
+                        Serial.printf("| ðŸ“Š Tempo inicial: %02d:00              |\n", mins);
                     }
                 }
 
+                int statusIdx = sessionDataStr.indexOf("\"status\":");
+                if (statusIdx >= 0)
+                {
+                    int q1 = sessionDataStr.indexOf("\"", statusIdx + 9);
+                    int q2 = sessionDataStr.indexOf("\"", q1 + 1);
+                    if (q1 >= 0 && q2 > q1)
+                    {
+                        String status = sessionDataStr.substring(q1 + 1, q2);
+                        Serial.print(F("| ðŸ“Œ Status: "));
+                        Serial.print(status);
+                        Serial.println(F("                       |"));
+                    }
+                }
+
+                Serial.println(F("+==========================================+\n"));
+
+                // Inicia a operaÃ§Ã£o com o tempo encontrado
                 if (parsedSeconds > 0)
                 {
-                    Serial.printf("✅ Sessão iniciada: %02d:%02d\n", parsedSeconds / 60, parsedSeconds % 60);
-                    Serial.println(F("========================================\n"));
-                    
                     startFromSeconds(parsedSeconds);
                     return;
                 }
 
                 if (parsedMinutes > 0)
                 {
-                    Serial.printf("✅ Sessão iniciada: %02d:00\n", parsedMinutes);
-                    Serial.println(F("========================================\n"));
-
                     start(parsedMinutes);
                     return;
                 }
             }
         }
 
-        if (message.indexOf("session_data") >= 0 && message.indexOf("null") >= 0)
-        {
-            Serial.println(F("⚠️  Nenhuma sessão ativa no servidor"));
-        }
-        else
-        {
-            Serial.println(F("❌ Dados de tempo não encontrados na mensagem"));
-        }
-        Serial.println(F("========================================\n"));
+        Serial.println(F("| âŒ Dados de tempo nÃ£o encontrados       |"));
+        Serial.println(F("+==========================================+\n"));
     }
 
 } // namespace Operation
