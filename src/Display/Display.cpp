@@ -9,128 +9,114 @@ namespace Disp
     static String lastStatus = "STOP";
     static unsigned long lastClockUpdate = 0;
 
-    // Tabela de segmentos para display de 7 segmentos (cátodo comum)
+    // CÁTODO COMUM - padrões da biblioteca DIYables
     static const uint8_t digitSegments[10] = {
-        0b00111111, // 0
-        0b00000110, // 1
-        0b01011011, // 2
-        0b01001111, // 3
-        0b01100110, // 4
-        0b01101101, // 5
-        0b01111101, // 6
-        0b00000111, // 7
-        0b01111111, // 8
-        0b01101111  // 9
+        0b11000000, // 0
+        0b11111001, // 1
+        0b10100100, // 2
+        0b10110000, // 3
+        0b10011001, // 4
+        0b10010010, // 5
+        0b10000010, // 6
+        0b11111000, // 7
+        0b10000000, // 8
+        0b10010000  // 9
     };
 
-    // Tabela de caracteres para letras
-    static const uint8_t charSegments[26] = {
-        0b01110111, // A
-        0b01111100, // b
-        0b00111001, // C
-        0b01011110, // d
-        0b01111001, // E
-        0b01110001, // F
-        0b00111101, // G
-        0b01110110, // H
-        0b00000110, // I
-        0b00001110, // J
-        0b01110110, // K (mesmo que H)
-        0b00111000, // L
-        0b00110111, // M (aproximação)
-        0b01010100, // n
-        0b00111111, // O
-        0b01110011, // P
-        0b01100111, // q
-        0b01010000, // r
-        0b01101101, // S
-        0b01111000, // t
-        0b00111110, // U
-        0b00111110, // V (mesmo que U)
-        0b00111110, // W (mesmo que U)
-        0b01110110, // X (mesmo que H)
-        0b01101110, // y
-        0b01011011  // Z (mesmo que 2)
-    };
+    // Valores dos 4 dígitos e pontos decimais (estado atual)
+    static uint8_t _digit_values[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    static uint8_t _digit_dots = 0x00;
 
-    void writeToShiftRegister(uint8_t digit1, uint8_t digit2, uint8_t digit3, uint8_t digit4, bool colonOn = false)
+    // Função shift adaptada da biblioteca DIYables
+    void shift(uint8_t value)
     {
-        // Debug das informações enviadas - apenas raramente
-        static unsigned long lastDebugDisplay = 0;
-        if (millis() - lastDebugDisplay > 30000)
-        { // Debug a cada 30 segundos
-            lastDebugDisplay = millis();
-            Serial.printf("[DISPLAY] -> %02X %02X %02X %02X (%s)\n",
-                          digit1, digit2, digit3, digit4, colonOn ? ":" : " ");
-        }
-
-        digitalWrite(HC595_LATCH_PIN, LOW);
-        delayMicroseconds(10); // Pequeno delay para estabilizar
-
-        // Para módulos duplos 74HC595D em cascata
-        // A ordem pode precisar ser ajustada dependendo da configuração do hardware
-
-        // Primeiro 74HC595D (controla dígitos 3 e 4 - lado direito)
-        // Dígito 4 (mais à direita)
-        shiftOut(HC595_DATA_PIN, HC595_CLOCK_PIN, MSBFIRST, digit4);
-
-        // Dígito 3 - recebe o ponto inferior do “:”
-        uint8_t digit3_data = digit3;
-        if (colonOn)
+        for (uint8_t i = 8; i >= 1; i--)
         {
-            digit3_data |= 0b10000000;
-        }
-        shiftOut(HC595_DATA_PIN, HC595_CLOCK_PIN, MSBFIRST, digit3_data);
+            if (value & 0x80)
+                digitalWrite(HC595_DATA_PIN, HIGH);
+            else
+                digitalWrite(HC595_DATA_PIN, LOW);
 
-        // Segundo 74HC595D (controla dígitos 1 e 2 - lado esquerdo)
-        // Dígito 2 - recebe o ponto superior do “:”
-        uint8_t digit2_data = digit2;
-        if (colonOn)
+            value <<= 1;
+            digitalWrite(HC595_CLOCK_PIN, LOW);
+            digitalWrite(HC595_CLOCK_PIN, HIGH);
+        }
+    }
+
+    // Loop de multiplexação - DEVE SER CHAMADO CONTINUAMENTE!
+    void multiplex()
+    {
+        for (int i = 0; i < 4; i++)
         {
-            digit2_data |= 0b10000000; // Ponto decimal para simular ":"
+            // Seletor de dígito: 0x08, 0x04, 0x02, 0x01
+            int digit_selector = 0x08 >> i;
+            uint8_t value = _digit_values[i];
+
+            // Adiciona ponto decimal se necessário
+            if (_digit_dots & (1 << i))
+                value &= 0x7F; // Liga o bit 7 (ponto decimal)
+
+            shift(value);           // Primeiro: padrão dos segmentos
+            shift(digit_selector);  // Segundo: qual dígito acender
+
+            // Faz o latch
+            digitalWrite(HC595_LATCH_PIN, LOW);
+            digitalWrite(HC595_LATCH_PIN, HIGH);
         }
-        shiftOut(HC595_DATA_PIN, HC595_CLOCK_PIN, MSBFIRST, digit2_data);
+    }
 
-        // Dígito 1 (mais à esquerda)
-        shiftOut(HC595_DATA_PIN, HC595_CLOCK_PIN, MSBFIRST, digit1);
+    void setDigit(int pos, uint8_t pattern)
+    {
+        if (pos >= 0 && pos < 4)
+            _digit_values[pos] = pattern;
+    }
 
-        delayMicroseconds(10); // Delay antes de fazer latch
-        digitalWrite(HC595_LATCH_PIN, HIGH);
-        delayMicroseconds(10); // Delay após latch
+    void setDot(int pos, bool on)
+    {
+        if (pos >= 0 && pos < 4)
+        {
+            if (on)
+                _digit_dots |= (1 << pos);
+            else
+                _digit_dots &= ~(1 << pos);
+        }
+    }
+
+    void clearDisplay()
+    {
+        for (int i = 0; i < 4; i++)
+            _digit_values[i] = 0xFF;
+        _digit_dots = 0x00;
     }
 
     uint8_t getCharSegment(char c)
     {
         c = toupper(c);
         if (c >= '0' && c <= '9')
-        {
             return digitSegments[c - '0'];
-        }
-        if (c >= 'A' && c <= 'Z')
-        {
-            return charSegments[c - 'A'];
-        }
-        switch (c)
-        {
-        case ' ':
-            return 0b00000000;
-        case '-':
-            return 0b01000000;
-        case '_':
-            return 0b00001000;
-        default:
-            return 0b00000000;
-        }
+        
+        // Caracteres especiais
+        if (c == '-')
+            return 0b10111111; // traço
+        if (c == ' ')
+            return 0xFF; // apagado
+        
+        return 0xFF;
     }
 
     void showText4(const String &txt)
     {
-        uint8_t seg1 = getCharSegment(txt.length() > 0 ? txt[0] : ' ');
-        uint8_t seg2 = getCharSegment(txt.length() > 1 ? txt[1] : ' ');
-        uint8_t seg3 = getCharSegment(txt.length() > 2 ? txt[2] : ' ');
-        uint8_t seg4 = getCharSegment(txt.length() > 3 ? txt[3] : ' ');
-
-        writeToShiftRegister(seg1, seg2, seg3, seg4, false);
+        for (int i = 0; i < 4; i++)
+        {
+            if (i < txt.length())
+                setDigit(i, getCharSegment(txt[i]));
+            else
+                setDigit(i, 0xFF);
+        }
+        setDot(0, false);
+        setDot(1, false);
+        setDot(2, false);
+        setDot(3, false);
     }
 
     void showTime(const String &timeStr)
@@ -138,12 +124,14 @@ namespace Disp
         // Para formato "MM:SS" - mostra os 4 dígitos com dois pontos
         if (timeStr.length() == 5 && timeStr[2] == ':')
         {
-            uint8_t min1 = digitSegments[timeStr[0] - '0'];
-            uint8_t min2 = digitSegments[timeStr[1] - '0'];
-            uint8_t sec1 = digitSegments[timeStr[3] - '0'];
-            uint8_t sec2 = digitSegments[timeStr[4] - '0'];
-
-            writeToShiftRegister(min1, min2, sec1, sec2, true);
+            setDigit(0, digitSegments[timeStr[0] - '0']);
+            setDigit(1, digitSegments[timeStr[1] - '0']);
+            setDigit(2, digitSegments[timeStr[3] - '0']);
+            setDigit(3, digitSegments[timeStr[4] - '0']);
+            
+            // Dois pontos usando pontos decimais
+            setDot(1, true);  // Ponto superior
+            setDot(2, true);  // Ponto inferior
             return;
         }
 
@@ -156,16 +144,7 @@ namespace Disp
         time_t now = time(nullptr);
         if (now < 1000)
         {
-            // Tempo ainda não sincronizado, mostrar "----"
             showText4("----");
-
-            // Debug para tempo não sincronizado
-            static unsigned long lastNoTimeDebug = 0;
-            if (millis() - lastNoTimeDebug > 5000) // a cada 5 segundos
-            {
-                lastNoTimeDebug = millis();
-                Serial.println(F("[DISPLAY] Aguardando sincronizacao de tempo..."));
-            }
             return;
         }
 
@@ -173,99 +152,51 @@ namespace Disp
         localtime_r(&now, &info);
         int hh = info.tm_hour;
         int mm = info.tm_min;
-        int ss = info.tm_sec;
 
-        // Debug detalhado no serial
-        static unsigned long lastDebug = 0;
-        if (millis() - lastDebug > 30000) // a cada 30 segundos
-        {
-            lastDebug = millis();
-            Serial.println(F("+===========================================+"));
-            Serial.println(F("| INFORMACOES DE TEMPO                  |"));
-            Serial.println(F("+-------------------------------------------+"));
-            Serial.printf("| Horario atual  : %02d:%02d:%02d           |\n", hh, mm, ss);
-            Serial.printf("| Timestamp Unix : %lld         |\n", (long long)now);
-            Serial.printf("| Uptime sistema : %lu ms          |\n", millis());
-            Serial.printf("| Memoria livre  : %d bytes        |\n", ESP.getFreeHeap());
-            Serial.println(F("+===========================================+"));
-            Serial.println();
-        }
-
-        // Mostra HH:MM com dois pontos
-        uint8_t h1 = digitSegments[hh / 10];
-        uint8_t h2 = digitSegments[hh % 10];
-        uint8_t m1 = digitSegments[mm / 10];
-        uint8_t m2 = digitSegments[mm % 10];
-
-        // Pisca os dois pontos a cada segundo para indicar funcionamento
-        static bool colonBlink = true;
-        static unsigned long lastColonBlink = 0;
-        if (millis() - lastColonBlink >= 1000)
-        {
-            lastColonBlink = millis();
-            colonBlink = !colonBlink;
-        }
-
-        writeToShiftRegister(h1, h2, m1, m2, colonBlink);
+        char timeStr[6];
+        snprintf(timeStr, sizeof(timeStr), "%02d:%02d", hh, mm);
+        showTime(timeStr);
     }
 
     void begin()
     {
-        Serial.print(F("[DISPLAY] Inicializando 74HC595 - DATA:D"));
-        Serial.print(HC595_DATA_PIN);
-        Serial.print(F(" LATCH:D"));
-        Serial.print(HC595_LATCH_PIN);
-        Serial.print(F(" CLOCK:D"));
-        Serial.println(HC595_CLOCK_PIN);
+        Serial.println(F("[DISPLAY] Inicializando 74HC595 MULTIPLEXADO"));
+        Serial.printf("DATA:%d LATCH:%d CLOCK:%d\n", HC595_DATA_PIN, HC595_LATCH_PIN, HC595_CLOCK_PIN);
 
-        // Configura os pinos como saída
         pinMode(HC595_DATA_PIN, OUTPUT);
         pinMode(HC595_LATCH_PIN, OUTPUT);
         pinMode(HC595_CLOCK_PIN, OUTPUT);
 
-        // Limpa o display
-        writeToShiftRegister(0, 0, 0, 0, false);
+        clearDisplay();
 
-        // Teste sequencial para verificar cada dígito
-        Serial.println(F("[DISPLAY] Iniciando teste sequencial..."));
+        // Teste "8888"
+        Serial.println(F("[DISPLAY] Teste: 8888"));
+        for (int i = 0; i < 4; i++)
+            setDigit(i, digitSegments[8]);
+        
+        for (int t = 0; t < 2000; t++)
+        {
+            multiplex();
+            delay(1);
+        }
 
-        // Testa cada dígito individualmente
-        Serial.println(F("[DISPLAY] Testando dígito 1 (esquerda)"));
-        writeToShiftRegister(digitSegments[1], 0, 0, 0, false);
-        delay(1000);
+        // Teste "1234"
+        Serial.println(F("[DISPLAY] Teste: 1234"));
+        setDigit(0, digitSegments[1]);
+        setDigit(1, digitSegments[2]);
+        setDigit(2, digitSegments[3]);
+        setDigit(3, digitSegments[4]);
+        setDot(1, true);
+        setDot(2, true);
+        
+        for (int t = 0; t < 2000; t++)
+        {
+            multiplex();
+            delay(1);
+        }
 
-        Serial.println(F("[DISPLAY] Testando dígito 2"));
-        writeToShiftRegister(0, digitSegments[2], 0, 0, false);
-        delay(1000);
-
-        Serial.println(F("[DISPLAY] Testando dígito 3"));
-        writeToShiftRegister(0, 0, digitSegments[3], 0, false);
-        delay(1000);
-
-        Serial.println(F("[DISPLAY] Testando dígito 4 (direita)"));
-        writeToShiftRegister(0, 0, 0, digitSegments[4], false);
-        delay(1000);
-
-        // Teste "8888" para todos os segmentos
-        Serial.println(F("[DISPLAY] Testando todos os segmentos (8888)"));
-        writeToShiftRegister(digitSegments[8], digitSegments[8], digitSegments[8], digitSegments[8], false);
-        delay(2000);
-
-        // Teste com dois pontos
-        Serial.println(F("[DISPLAY] Testando dois pontos (12:34)"));
-        writeToShiftRegister(digitSegments[1], digitSegments[2], digitSegments[3], digitSegments[4], true);
-        delay(2000);
-
-        // Teste "TEST"
-        Serial.println(F("[DISPLAY] Testando texto (TEST)"));
-        showText4("TEST");
-        delay(2000);
-
-        // Limpa
-        Serial.println(F("[DISPLAY] Limpando display"));
-        writeToShiftRegister(0, 0, 0, 0, false);
-
-        Serial.println(F("[DISPLAY] 74HC595 inicializado com sucesso"));
+        clearDisplay();
+        Serial.println(F("[DISPLAY] Inicializado com sucesso!"));
     }
 
     void showStatus(const char *status)
@@ -288,28 +219,31 @@ namespace Disp
     {
         String str = String(text);
 
-        // Se for formato de tempo MM:SS, usa função específica
         if (str.length() == 5 && str[2] == ':')
-        {
             showTime(str);
-        }
         else
-        {
             showText4(str);
-        }
 
-        showingStatus = false; // Força exibição do texto personalizado
+        showingStatus = false;
     }
 
     void loop()
     {
-        unsigned long ms = millis();
-        if (!showingStatus && ms - lastClockUpdate >= 1000)
+        // MULTIPLEXAÇÃO - atualiza o display continuamente
+        multiplex();
+
+        // Atualiza o relógio a cada 1 segundo
+        static unsigned long lastUpdate = 0;
+        if (millis() - lastUpdate >= 1000)
         {
-            lastClockUpdate = ms;
-            showClock();
+            lastUpdate = millis();
+            
+            if (!showingStatus)
+                showClock();
         }
-        if (showingStatus && ms - statusShownAt >= STATUS_FLASH_TIME)
+
+        // Remove status após tempo definido
+        if (showingStatus && millis() - statusShownAt >= STATUS_FLASH_TIME)
         {
             showingStatus = false;
             showClock();
